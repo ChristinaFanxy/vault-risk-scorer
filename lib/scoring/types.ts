@@ -46,6 +46,7 @@ export interface VaultData {
 
   // Curator
   curatorAddress: string
+  curatorName: string | null     // display name from Morpho API, null if unknown
   curatorType: CuratorType
   permissionScope: 'narrow' | 'medium' | 'broad'
   timelockHours: number

@@ -14,7 +14,7 @@ const baseVault: VaultData = {
   maxLtvPct: 80, liquidationThresholdPct: 85, liquidationBonusPct: 5,
   liquidationMechanism: 'dutch-auction', historicalBadDebtUsd: 0,
   oracleManipulationSurface: 'low',
-  curatorAddress: '0xcurator', curatorType: 'institution', permissionScope: 'narrow',
+  curatorName: null, curatorAddress: '0xcurator', curatorType: 'institution', permissionScope: 'narrow',
   timelockHours: 72, vaultsManaged: 5, incidentCount: 0, curatorBorrowsFromVault: false,
   placeholderFields: [],
 }

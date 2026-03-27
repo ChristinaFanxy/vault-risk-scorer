@@ -43,7 +43,7 @@ describe('scoreVault', () => {
     maxLtvPct: 80, liquidationThresholdPct: 90, liquidationBonusPct: 8,
     liquidationMechanism: 'dutch-auction', historicalBadDebtUsd: 0,
     oracleManipulationSurface: 'low',
-    curatorAddress: '0xc', curatorType: 'institution', permissionScope: 'narrow',
+    curatorName: null, curatorAddress: '0xc', curatorType: 'institution', permissionScope: 'narrow',
     timelockHours: 72, vaultsManaged: 5, incidentCount: 0, curatorBorrowsFromVault: false,
     placeholderFields: [],
   }

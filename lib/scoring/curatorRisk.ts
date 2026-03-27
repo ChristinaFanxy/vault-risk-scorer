@@ -8,9 +8,10 @@ export function scoreCuratorRisk(vault: VaultData): DimensionScore {
   // 1. Who manages this vault
   const idScore = vault.curatorType === 'institution' ? 0 : vault.curatorType === 'known-team' ? 10 : 30
   score += idScore
-  const idLabel = vault.curatorType === 'institution' ? 'Established institution'
+  const idTypeLabel = vault.curatorType === 'institution' ? 'Established institution'
     : vault.curatorType === 'known-team' ? 'Known public team'
     : 'Anonymous'
+  const idLabel = vault.curatorName ? `${vault.curatorName} — ${idTypeLabel}` : idTypeLabel
   indicators.push({
     name: 'Who manages this vault',
     desc: 'Is the team behind this vault publicly known? Anonymous operators have no accountability if things go wrong.',
@@ -38,8 +39,10 @@ export function scoreCuratorRisk(vault: VaultData): DimensionScore {
   // 3. Change delay (timelock)
   const tlScore = vault.timelockHours >= 72 ? 0 : vault.timelockHours >= 24 ? 5 : vault.timelockHours >= 1 ? 15 : 25
   score += tlScore
+  const tlDays = vault.timelockHours / 24
   const tlLabel = vault.timelockHours === 0 ? 'None — changes are instant'
-    : vault.timelockHours < 24 ? `${vault.timelockHours}h (short)`
+    : vault.timelockHours < 24 ? `${vault.timelockHours}h (less than 1 day)`
+    : tlDays >= 1 && Number.isInteger(tlDays) ? `${tlDays} day${tlDays > 1 ? 's' : ''}`
     : `${vault.timelockHours}h`
   indicators.push({
     name: 'Change delay (timelock)',

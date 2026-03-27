@@ -3,7 +3,8 @@ import { getAddress, type Address } from 'viem'
 import { getClient, withRetry } from '@/lib/viemClient'
 import { fetchVaultYield } from '@/lib/defillama'
 import { fetchMorphoBadDebt } from '@/lib/thegraph'
-import type { ChainId, VaultData, AssetClass, OracleType } from '@/lib/scoring/types'
+import { fetchMorphoCuratorData } from '@/lib/morphoApi'
+import type { ChainId, VaultData, AssetClass, OracleType, CuratorType } from '@/lib/scoring/types'
 
 // Same address on Ethereum mainnet and Base
 const MORPHO_BLUE_ADDRESS = '0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb' as const
@@ -265,16 +266,22 @@ export async function fetchMorphoVaultData(
   const client = getClient(chainId)
   const checksumAddress = getAddress(address.toLowerCase()) as Address
 
-  const [name, owner, timelockRaw, yield_, badDebt, assets] = await Promise.all([
+  const [name, yield_, badDebt, assets, curatorData] = await Promise.all([
     withRetry(() => client.readContract({ address: checksumAddress, abi: METAMORPHO_ABI, functionName: 'name' })),
-    withRetry(() => client.readContract({ address: checksumAddress, abi: METAMORPHO_ABI, functionName: 'owner' })),
-    withRetry(() => client.readContract({ address: checksumAddress, abi: METAMORPHO_ABI, functionName: 'timelock' })),
     fetchVaultYield(defillamaPoolId),
     fetchMorphoBadDebt(address, chainId),
     fetchMarketAssets(checksumAddress, chainId, client).catch(() => []),
+    fetchMorphoCuratorData(address, chainId).catch(() => null),
   ])
 
-  const timelockHours = Number(timelockRaw) / 3600
+  // Derive curator type from Morpho's verification status
+  const curatorType: CuratorType = curatorData?.curatorVerified ? 'institution'
+    : curatorData?.curatorName ? 'known-team'
+    : 'anonymous'
+
+  const timelockHours = curatorData
+    ? curatorData.timelockSeconds / 3600
+    : 0
 
   const placeholderFields: string[] = [
     'maxLtvPct',
@@ -282,12 +289,11 @@ export async function fetchMorphoVaultData(
     'liquidationBonusPct',
     'liquidationMechanism',
     'oracleManipulationSurface',
-    'curatorType',
     'permissionScope',
-    'vaultsManaged',
     'incidentCount',
     'curatorBorrowsFromVault',
     ...(assets.length === 0 ? ['assets'] : []),
+    ...(curatorData === null ? ['curatorType', 'vaultsManaged'] : []),
   ]
 
   return {
@@ -308,11 +314,12 @@ export async function fetchMorphoVaultData(
     liquidationMechanism: 'dutch-auction',
     historicalBadDebtUsd: badDebt,
     oracleManipulationSurface: 'low',
-    curatorAddress: owner as string,
-    curatorType: 'known-team',
+    curatorAddress: curatorData?.curatorAddress ?? address,
+    curatorName: curatorData?.curatorName ?? null,
+    curatorType,
     permissionScope: 'medium',
     timelockHours,
-    vaultsManaged: 1,
+    vaultsManaged: curatorData?.vaultsManaged ?? 1,
     incidentCount: 0,
     curatorBorrowsFromVault: false,
     placeholderFields,
