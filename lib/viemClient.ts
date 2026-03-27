@@ -20,7 +20,8 @@ export function getClient(chainId: ChainId) {
 export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn()
-  } catch {
-    return await fn()
+  } catch (err) {
+    console.warn('[withRetry] RPC call failed, retrying once:', err instanceof Error ? err.message : err)
+    return await fn()  // one retry
   }
 }

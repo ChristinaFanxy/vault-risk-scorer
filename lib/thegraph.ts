@@ -6,6 +6,10 @@ const MORPHO_SUBGRAPH: Record<ChainId, string | undefined> = {
   8453: process.env.MORPHO_SUBGRAPH_BASE,
 }
 
+// NOTE: This query filters by market.inputToken (collateral token address).
+// Morpho MetaMorpho vault address ≠ market inputToken; this may return empty
+// results for MetaMorpho vaults. Verify against the actual subgraph schema
+// at the configured MORPHO_SUBGRAPH_MAINNET/BASE endpoint.
 const BAD_DEBT_QUERY = `
   query BadDebt($vault: String!) {
     liquidations(where: { market_: { inputToken: $vault } }) {
