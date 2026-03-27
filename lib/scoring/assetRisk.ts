@@ -60,7 +60,7 @@ export function scoreAssetRisk(vault: VaultData): DimensionScore {
   score += concScore
   indicators.push({
     name: 'Concentration',
-    value: `${maxWeight}% in ${dominant.symbol}`,
+    value: concentrated ? `${maxWeight}% in ${dominant.symbol}` : 'None',
     contribution: concScore,
     note: concentrated ? 'Single asset >50% of multi-asset vault' : undefined,
   })

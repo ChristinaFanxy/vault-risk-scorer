@@ -23,6 +23,14 @@ describe('computeCompositeScore', () => {
       { score: 0, indicators: [] },
     )).toBe(40)
   })
+
+  it('returns 50 when all dimensions score 50', () => {
+    expect(computeCompositeScore(
+      { score: 50, indicators: [] },
+      { score: 50, indicators: [] },
+      { score: 50, indicators: [] },
+    )).toBe(50)
+  })
 })
 
 describe('scoreVault', () => {

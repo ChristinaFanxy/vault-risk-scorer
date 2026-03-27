@@ -42,4 +42,10 @@ describe('scoreLiquidationRisk', () => {
     expect(indicator.value).toBe('N/A')
     expect(indicator.contribution).toBe(0)
   })
+
+  it('safe vault with wide buffer scores 0 for LTV buffer indicator', () => {
+    const result = scoreLiquidationRisk(safeVault)
+    const ltvIndicator = result.indicators.find(i => i.name === 'LTV buffer')!
+    expect(ltvIndicator.contribution).toBe(0)  // 10% buffer → 0 points
+  })
 })

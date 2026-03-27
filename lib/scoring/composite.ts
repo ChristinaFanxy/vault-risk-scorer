@@ -22,19 +22,20 @@ export function scoreToGrade(score: number): { grade: CompositeScore['grade']; l
   if (score <= 20) return { grade: 'A', label: 'Low Risk' }
   if (score <= 40) return { grade: 'B', label: 'Moderate-Low Risk' }
   if (score <= 60) return { grade: 'C', label: 'Moderate Risk' }
-  if (score <= 80) return { grade: 'D', label: 'High Risk' }
+  if (score <= 80) return { grade: 'D', label: 'Elevated Risk' }
   return { grade: 'F', label: 'High Risk' }
 }
 
 function computeApyStability(vault: VaultData): 'Stable' | 'Volatile' {
   const history = vault.apyHistory.map(h => h.apyPct)
+  // Need at least 2 data points to compute meaningful stddev; default to 'Stable' for thin data
   if (history.length < 2) return 'Stable'
   const mean = history.reduce((s, v) => s + v, 0) / history.length
   const variance = history.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / history.length
   return Math.sqrt(variance) > 1.5 ? 'Volatile' : 'Stable'
 }
 
-export function scoreVault(vault: VaultData): CompositeScore {
+export function scoreVault(vault: VaultData, dataFreshnessMs = 0): CompositeScore {
   const assetRisk = scoreAssetRisk(vault)
   const liquidationRisk = scoreLiquidationRisk(vault)
   const curatorRisk = scoreCuratorRisk(vault)
@@ -59,6 +60,6 @@ export function scoreVault(vault: VaultData): CompositeScore {
     apyStabilityLabel: computeApyStability(vault),
     apyHistory: vault.apyHistory,
     placeholderFields: vault.placeholderFields,
-    dataFreshnessMs: Date.now(),
+    dataFreshnessMs,
   }
 }
