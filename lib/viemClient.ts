@@ -5,10 +5,15 @@ import type { ChainId } from '@/lib/scoring/types'
 
 function rpcUrl(chain: 'mainnet' | 'base'): string {
   const key = process.env.ALCHEMY_API_KEY
-  if (!key) throw new Error('ALCHEMY_API_KEY is not set')
+  if (key) {
+    return chain === 'mainnet'
+      ? `https://eth-mainnet.g.alchemy.com/v2/${key}`
+      : `https://base-mainnet.g.alchemy.com/v2/${key}`
+  }
+  // Fall back to public RPC endpoints (rate-limited but usable for dev/demo)
   return chain === 'mainnet'
-    ? `https://eth-mainnet.g.alchemy.com/v2/${key}`
-    : `https://base-mainnet.g.alchemy.com/v2/${key}`
+    ? 'https://eth.llamarpc.com'
+    : 'https://base.llamarpc.com'
 }
 
 export function getClient(chainId: ChainId) {

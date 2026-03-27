@@ -1,26 +1,42 @@
 [
   {
-    "name": "Gauntlet USDC Core",
-    "address": "0xBEEF01735c132Ada46AA9aA4c54623cAA92A64CB",
-    "chainId": 1,
+    "name": "Steakhouse Prime USDC",
+    "address": "0xBEEFE94c8aD530842bfE7d8B397938fFc1cb83b2",
+    "chainId": 8453,
     "protocol": "morpho",
-    "defillamaPoolId": "6a5cce30-3ab1-4e06-a3d9-22e81cfed0f6",
-    "tags": ["stablecoin", "core"]
+    "defillamaPoolId": "7820bd3c-461a-4811-9f0b-1d39c1503c3f",
+    "tags": ["stablecoin", "base"]
   },
   {
-    "name": "Steakhouse USDC",
-    "address": "0xBEEF069f4F19fcA43c2e4e3b52b5ec71C5069CA",
+    "name": "Gauntlet USDC Prime",
+    "address": "0xeE8F4eC5672F09119b96Ab6fB59C27E1b7e44b61",
+    "chainId": 8453,
+    "protocol": "morpho",
+    "defillamaPoolId": "e0672197-9f3e-4414-bca5-e6b4c90aa469",
+    "tags": ["stablecoin", "base"]
+  },
+  {
+    "name": "Sentora PYUSD Main",
+    "address": "0xb576765fB15505433aF24FEe2c0325895C559FB2",
     "chainId": 1,
     "protocol": "morpho",
-    "defillamaPoolId": "placeholder-replace-me",
+    "defillamaPoolId": "699f25fe-09f4-4f82-8f58-baa5b0af8fa4",
     "tags": ["stablecoin"]
   },
   {
-    "name": "Moonwell Flagship ETH",
-    "address": "0xa0E430870c4604CcE522E4787Af78adCEEe2B44",
-    "chainId": 8453,
+    "name": "Steakhouse USDC",
+    "address": "0xBEEF01735c132Ada46AA9aA4c54623cAA92A64CB",
+    "chainId": 1,
     "protocol": "morpho",
-    "defillamaPoolId": "placeholder-replace-me-base",
-    "tags": ["eth", "base"]
+    "defillamaPoolId": "b55f43a8-f444-4cd8-a3a4-0a4e786ba566",
+    "tags": ["stablecoin"]
+  },
+  {
+    "name": "Steakhouse USDT",
+    "address": "0xbEef047a543E45807105E51A8BBEFCc5950fcfBa",
+    "chainId": 1,
+    "protocol": "morpho",
+    "defillamaPoolId": "ded5a855-23c1-459d-8390-ba2707fac7c5",
+    "tags": ["stablecoin"]
   }
 ]

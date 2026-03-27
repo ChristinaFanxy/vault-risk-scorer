@@ -40,7 +40,7 @@ export async function fetchMorphoVaultData(
   defillamaPoolId: string
 ): Promise<VaultData> {
   const client = getClient(chainId)
-  const checksumAddress = getAddress(address) as Address
+  const checksumAddress = getAddress(address.toLowerCase()) as Address
 
   const [name, owner, timelockRaw, yield_, badDebt] = await Promise.all([
     withRetry(() =>
