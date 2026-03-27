@@ -1,9 +1,9 @@
 // lib/thegraph.ts
 import type { ChainId } from '@/lib/scoring/types'
 
-const MORPHO_SUBGRAPH: Record<ChainId, string> = {
-  1: 'https://api.thegraph.com/subgraphs/name/morpho-association/morpho-blue',
-  8453: 'https://api.thegraph.com/subgraphs/name/morpho-association/morpho-blue-base',
+const MORPHO_SUBGRAPH: Record<ChainId, string | undefined> = {
+  1: process.env.MORPHO_SUBGRAPH_MAINNET,
+  8453: process.env.MORPHO_SUBGRAPH_BASE,
 }
 
 const BAD_DEBT_QUERY = `
@@ -23,7 +23,7 @@ export async function fetchMorphoBadDebt(
   chainId: ChainId
 ): Promise<number> {
   const url = MORPHO_SUBGRAPH[chainId]
-  if (!url) return -1
+  if (!url) return -1  // subgraph URL not configured
 
   try {
     const res = await fetch(url, {
@@ -38,6 +38,7 @@ export async function fetchMorphoBadDebt(
     if (!res.ok) return -1
 
     const json = await res.json()
+    if (json.errors?.length) return -1
     const liquidations: Array<{ badDebtUsd: string }> = json.data?.liquidations ?? []
     return liquidations.reduce((sum, l) => sum + parseFloat(l.badDebtUsd), 0)
   } catch {

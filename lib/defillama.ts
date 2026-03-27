@@ -18,6 +18,7 @@ export async function fetchVaultYield(poolId: string): Promise<VaultYield> {
 
   const json = await res.json()
   const data = json.data
+  if (!data) throw new Error(`DefiLlama /chart/${poolId} returned empty data`)
 
   const history: Array<{ timestamp: number; apyPct: number }> = (data.chart ?? []).map(
     (row: { timestamp: string; apy: number }) => ({

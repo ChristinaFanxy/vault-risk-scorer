@@ -11,30 +11,16 @@ function rpcUrl(chain: 'mainnet' | 'base'): string {
     : `https://base-mainnet.g.alchemy.com/v2/${key}`
 }
 
-export const mainnetClient = createPublicClient({
-  chain: mainnet,
-  transport: http(rpcUrl('mainnet')),
-})
-
-export const baseClient = createPublicClient({
-  chain: base,
-  transport: http(rpcUrl('base')),
-})
-
 export function getClient(chainId: ChainId) {
-  if (chainId === 1) return mainnetClient
-  if (chainId === 8453) return baseClient
+  if (chainId === 1) return createPublicClient({ chain: mainnet, transport: http(rpcUrl('mainnet')) })
+  if (chainId === 8453) return createPublicClient({ chain: base, transport: http(rpcUrl('base')) })
   throw new Error(`Unsupported chainId: ${chainId}`)
 }
 
-/**
- * Retry a promise-returning fn once on failure.
- * Spec requirement: "RPC timeout → retry once, then show 'Data temporarily unavailable'."
- */
 export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn()
   } catch {
-    return await fn()  // one retry
+    return await fn()
   }
 }
