@@ -44,4 +44,11 @@ describe('GET /api/vault/[chainId]/[address]', () => {
     const res = await GET(req, { params: { chainId: '1', address: '0xbeef' } })
     expect(res.status).toBe(503)
   })
+
+  it('returns 404 when vault is not found', async () => {
+    ;(fetchMorphoVaultData as jest.Mock).mockRejectedValueOnce(new Error('vault not found'))
+    const req = new Request('http://localhost/api/vault/1/0xbeef')
+    const res = await GET(req, { params: { chainId: '1', address: '0xbeef' } })
+    expect(res.status).toBe(404)
+  })
 })

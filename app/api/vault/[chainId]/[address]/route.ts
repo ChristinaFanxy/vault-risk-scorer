@@ -33,6 +33,7 @@ export async function GET(
     return NextResponse.json(score)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
+    // TODO: replace string-match with instanceof VaultNotFoundError once fetchMorphoVaultData uses typed errors
     if (message.toLowerCase().includes('not found')) {
       return NextResponse.json({ error: 'Vault not found or not supported' }, { status: 404 })
     }
