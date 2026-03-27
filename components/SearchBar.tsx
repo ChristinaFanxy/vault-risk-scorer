@@ -11,6 +11,10 @@ export function SearchBar() {
     e.preventDefault()
     const trimmed = address.trim()
     if (!trimmed) return
+    if (!/^0x[0-9a-fA-F]{40}$/.test(trimmed)) {
+      alert('Please enter a valid vault address (0x followed by 40 hex characters)')
+      return
+    }
     router.push(`/vault/${chainId}/${trimmed}`)
   }
 

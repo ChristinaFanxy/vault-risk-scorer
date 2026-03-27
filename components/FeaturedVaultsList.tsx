@@ -30,6 +30,7 @@ export function FeaturedVaultsList({ vaults }: { vaults: FeaturedVault[] }) {
       <div className="flex gap-2 mb-4 flex-wrap">
         <button
           onClick={() => setChainFilter(null)}
+          aria-pressed={chainFilter == null}
           className={`text-xs px-3 py-1 rounded-full border transition-colors ${chainFilter == null ? 'border-indigo-500 text-indigo-300 bg-indigo-900/30' : 'border-gray-700 text-gray-400 hover:border-gray-500'}`}
         >
           All chains
@@ -38,6 +39,7 @@ export function FeaturedVaultsList({ vaults }: { vaults: FeaturedVault[] }) {
           <button
             key={c}
             onClick={() => setChainFilter(chainFilter === c ? null : c)}
+            aria-pressed={chainFilter === c}
             className={`text-xs px-3 py-1 rounded-full border transition-colors ${chainFilter === c ? 'border-indigo-500 text-indigo-300 bg-indigo-900/30' : 'border-gray-700 text-gray-400 hover:border-gray-500'}`}
           >
             {CHAIN_LABELS[c] ?? `Chain ${c}`}
@@ -47,6 +49,7 @@ export function FeaturedVaultsList({ vaults }: { vaults: FeaturedVault[] }) {
           <button
             key={p}
             onClick={() => setProtocolFilter(protocolFilter === p ? null : p)}
+            aria-pressed={protocolFilter === p}
             className={`text-xs px-3 py-1 rounded-full border transition-colors ${protocolFilter === p ? 'border-indigo-500 text-indigo-300 bg-indigo-900/30' : 'border-gray-700 text-gray-400 hover:border-gray-500'}`}
           >
             {p}

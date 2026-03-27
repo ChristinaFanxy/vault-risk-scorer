@@ -24,9 +24,9 @@ async function VaultContent({ chainId, address }: { chainId: string; address: st
 
   let score
   try {
-    const start = Date.now()
+    const fetchTime = Date.now()
     const vaultData = await fetchMorphoVaultData(address, cid, defillamaPoolId)
-    score = scoreVault(vaultData, Date.now() - start)
+    score = scoreVault(vaultData, fetchTime)
   } catch {
     notFound()
   }

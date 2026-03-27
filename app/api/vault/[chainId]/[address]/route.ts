@@ -26,10 +26,10 @@ export async function GET(
   )
   const defillamaPoolId = featured?.defillamaPoolId ?? address
 
-  const start = Date.now()
+  const fetchTime = Date.now()
   try {
     const vaultData = await fetchMorphoVaultData(address, chainId, defillamaPoolId)
-    const score = scoreVault(vaultData, Date.now() - start)
+    const score = scoreVault(vaultData, fetchTime)
     return NextResponse.json(score)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
