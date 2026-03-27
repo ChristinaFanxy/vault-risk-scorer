@@ -23,7 +23,7 @@ export function scoreToGrade(score: number): { grade: CompositeScore['grade']; l
   if (score <= 40) return { grade: 'B', label: 'Moderate-Low Risk' }
   if (score <= 60) return { grade: 'C', label: 'Moderate Risk' }
   if (score <= 80) return { grade: 'D', label: 'High Risk' }
-  return { grade: 'F', label: 'Very High Risk' }
+  return { grade: 'F', label: 'High Risk' }
 }
 
 function computeApyStability(vault: VaultData): 'Stable' | 'Volatile' {
