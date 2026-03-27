@@ -62,8 +62,10 @@ export interface DimensionScore {
   score: number           // 0–100, lower = safer
   indicators: Array<{
     name: string
+    desc?: string          // plain-English explanation for end users
     value: string | number
     contribution: number
+    status?: 'good' | 'ok' | 'caution' | 'bad'
     note?: string
   }>
 }

@@ -14,6 +14,20 @@ function scoreColor(score: number): string {
   return 'text-red-500'
 }
 
+function StatusBadge({ status }: { status: 'good' | 'ok' | 'caution' | 'bad' }) {
+  const cfg = {
+    good:    { label: 'Good',    cls: 'bg-green-900/50 text-green-400 border-green-800' },
+    ok:      { label: 'OK',      cls: 'bg-gray-800 text-gray-300 border-gray-700' },
+    caution: { label: 'Caution', cls: 'bg-yellow-900/40 text-yellow-400 border-yellow-800' },
+    bad:     { label: 'Risk',    cls: 'bg-red-900/40 text-red-400 border-red-800' },
+  }[status]
+  return (
+    <span className={`inline-block text-xs px-1.5 py-0.5 rounded border ${cfg.cls}`}>
+      {cfg.label}
+    </span>
+  )
+}
+
 export function RiskDimensionCard({ dimensionScore, weightPct, placeholderFields = [] }: Props) {
   const { score, indicators } = dimensionScore
 
@@ -30,27 +44,32 @@ export function RiskDimensionCard({ dimensionScore, weightPct, placeholderFields
         </p>
       )}
 
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-gray-500 border-b border-gray-700">
-            <th className="text-left pb-2">Indicator</th>
-            <th className="text-right pb-2">Value</th>
-            <th className="text-right pb-2">+Score</th>
-          </tr>
-        </thead>
-        <tbody>
-          {indicators.map(ind => (
-            <tr key={ind.name} className="border-b border-gray-800">
-              <td className="py-2 text-gray-300">
-                {ind.name}
-                {ind.note && <p className="text-xs text-yellow-400 mt-0.5">{ind.note}</p>}
-              </td>
-              <td className="py-2 text-right text-gray-400">{ind.value}</td>
-              <td className="py-2 text-right text-gray-500">+{ind.contribution}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="flex flex-col divide-y divide-gray-800">
+        {indicators.map(ind => (
+          <div key={ind.name} className="py-3 flex gap-3 items-start">
+            {/* Left: name + desc + note */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-medium text-gray-200">{ind.name}</span>
+                {ind.status && <StatusBadge status={ind.status} />}
+              </div>
+              {ind.desc && (
+                <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{ind.desc}</p>
+              )}
+              {ind.note && (
+                <p className="text-xs text-yellow-400 mt-1">⚠ {ind.note}</p>
+              )}
+            </div>
+            {/* Right: value + score */}
+            <div className="text-right shrink-0 ml-4">
+              <div className="text-sm text-gray-300">{ind.value}</div>
+              {ind.contribution > 0 && (
+                <div className="text-xs text-gray-600 mt-0.5">+{ind.contribution} risk pts</div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

@@ -24,13 +24,23 @@ export function scoreAssetRisk(vault: VaultData): DimensionScore {
   const indicators: DimensionScore['indicators'] = []
   let score = 0
 
-  // 1. Asset type (dominant asset by weight)
+  // 1. Collateral type (dominant asset by weight)
   const dominant = vault.assets.reduce((a, b) => a.vaultWeightPct >= b.vaultWeightPct ? a : b)
   const assetTypeScore = ASSET_CLASS_SCORE[dominant.assetClass]
   score += assetTypeScore
-  indicators.push({ name: 'Asset type', value: dominant.assetClass, contribution: assetTypeScore })
+  const assetLabel = dominant.assetClass === 'stablecoin' ? 'Stablecoin (low volatility)'
+    : dominant.assetClass === 'blue-chip' ? 'Blue-chip (ETH/BTC class)'
+    : 'Long-tail token (high risk)'
+  indicators.push({
+    name: 'Collateral type',
+    desc: 'What borrowers put up as collateral. Stablecoins are safest; unknown tokens can lose value rapidly.',
+    value: `${dominant.symbol} — ${assetLabel}`,
+    contribution: assetTypeScore,
+    status: dominant.assetClass === 'stablecoin' ? 'good'
+      : dominant.assetClass === 'blue-chip' ? 'ok' : 'bad',
+  })
 
-  // 2. Oracle source (worst oracle among assets)
+  // 2. Price oracle (worst oracle among assets)
   const oracleOrder: OracleType[] = ['chainlink', 'uniswap-twap', 'custom']
   const worstOracle = vault.assets.reduce<OracleType>(
     (worst, a) => oracleOrder.indexOf(a.oracleType) > oracleOrder.indexOf(worst) ? a.oracleType : worst,
@@ -38,30 +48,53 @@ export function scoreAssetRisk(vault: VaultData): DimensionScore {
   )
   const oracleScore = ORACLE_SCORE[worstOracle]
   score += oracleScore
-  indicators.push({ name: 'Oracle source', value: worstOracle, contribution: oracleScore })
+  const oracleLabel = worstOracle === 'chainlink' ? 'Chainlink (battle-tested)'
+    : worstOracle === 'uniswap-twap' ? 'Uniswap TWAP (DEX-based)'
+    : 'Custom oracle (unverified)'
+  indicators.push({
+    name: 'Price oracle',
+    desc: 'Where collateral prices come from. Chainlink is battle-tested and widely audited; custom oracles carry more uncertainty.',
+    value: oracleLabel,
+    contribution: oracleScore,
+    status: worstOracle === 'chainlink' ? 'good' : worstOracle === 'uniswap-twap' ? 'caution' : 'bad',
+  })
 
-  // 3. Liquidity depth vs TVL
+  // 3. Market liquidity vs TVL
   const totalLiquidity = vault.assets.reduce((s, a) => s + a.liquidityDepthUsd, 0)
   const ratio = vault.tvlUsd > 0 ? totalLiquidity / vault.tvlUsd : 0
   const liquidityScore = ratio >= 5 ? 0 : ratio >= 2 ? 5 : ratio >= 1 ? 15 : 25
   score += liquidityScore
-  indicators.push({ name: 'Liquidity depth', value: `${ratio.toFixed(1)}× TVL`, contribution: liquidityScore })
+  indicators.push({
+    name: 'Market liquidity',
+    desc: 'How easily collateral can be sold in an emergency. If liquidity is smaller than the vault, a mass liquidation could cause losses.',
+    value: `${ratio.toFixed(1)}× vault size`,
+    contribution: liquidityScore,
+    status: ratio >= 5 ? 'good' : ratio >= 2 ? 'ok' : ratio >= 1 ? 'caution' : 'bad',
+  })
 
-  // 4. 30-day volatility (weighted avg)
+  // 4. Price volatility (weighted 30d avg)
   const weightedVol = vault.assets.reduce((s, a) => s + a.volatility30d * (a.vaultWeightPct / 100), 0)
   const volScore = weightedVol < 0.01 ? 0 : weightedVol < 0.05 ? 5 : weightedVol < 0.15 ? 10 : 20
   score += volScore
-  indicators.push({ name: '30d volatility', value: `${(weightedVol * 100).toFixed(1)}%`, contribution: volScore })
+  indicators.push({
+    name: 'Price volatility',
+    desc: 'How much collateral prices swing over 30 days. Higher volatility = faster chance of hitting the liquidation threshold.',
+    value: `${(weightedVol * 100).toFixed(1)}% monthly average`,
+    contribution: volScore,
+    status: weightedVol < 0.01 ? 'good' : weightedVol < 0.05 ? 'ok' : weightedVol < 0.15 ? 'caution' : 'bad',
+  })
 
-  // 5. Concentration (>50% single asset in multi-asset vault)
+  // 5. Concentration
   const maxWeight = Math.max(...vault.assets.map(a => a.vaultWeightPct))
   const concentrated = vault.assets.length > 1 && maxWeight > 50
   const concScore = concentrated ? 10 : 0
   score += concScore
   indicators.push({
     name: 'Concentration',
-    value: concentrated ? `${maxWeight}% in ${dominant.symbol}` : 'None',
+    desc: 'Whether one asset dominates the vault. Concentration means less diversification — one bad asset affects the whole pool.',
+    value: concentrated ? `${maxWeight.toFixed(1)}% in ${dominant.symbol}` : 'Diversified',
     contribution: concScore,
+    status: concentrated ? 'caution' : 'good',
     note: concentrated ? 'Single asset >50% of multi-asset vault' : undefined,
   })
 
