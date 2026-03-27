@@ -50,10 +50,16 @@ They want to know: "Is this vault safe? What am I actually exposed to?"
 | Oracle source | Chainlink feeds (direct read) | On-chain oracle address lookup |
 | Curator identity / permissions | On-chain role/timelock contracts | — |
 | Asset liquidity depth | DefiLlama, on-chain DEX pools | — |
+| Curator borrow position | viem direct read of vault's borrow state for curator address | On-chain event log scan |
 
-### Supported Chains (MVP)
+> Note: On-chain reads and scoring logic are designed with protocol abstraction in mind (`/lib/scoring/protocols/`), but v1 targets **Morpho MetaMorpho only**. Euler and Aave support is v2.
 
-Ethereum mainnet, Base, Arbitrum, Optimism — all major EVM chains where Morpho/Euler/Aave have significant TVL.
+### Supported Chains
+
+MVP: **Ethereum mainnet + Base** (most Morpho TVL, validates framework first).
+v2: Arbitrum, Optimism and other EVM chains.
+
+> Note: Architecture is designed with multi-chain support in mind (chain ID routing, per-chain RPC config), but initial implementation targets Ethereum mainnet and Base only.
 
 ---
 
@@ -78,7 +84,7 @@ Ethereum mainnet, Base, Arbitrum, Optimism — all major EVM chains where Morpho
 | LTV buffer | Max LTV vs liquidation threshold gap | Thin buffer = higher risk |
 | Liquidation incentive | Liquidation bonus % | Too low = liquidators won't act |
 | Liquidation mechanism | Dutch auction / fixed discount | Fixed discount less resilient |
-| Historical bad debt | On-chain event logs | Any bad debt = significant penalty |
+| Historical bad debt | The Graph Morpho subgraph (indexed events); fallback to "N/A" if subgraph unavailable | Any bad debt = significant penalty |
 | Oracle manipulation surface | Flash loan attack surface analysis | Single-block oracle = higher risk |
 
 #### Dimension 3: Curator Risk (25%)
@@ -103,6 +109,8 @@ Each dimension scores 0–100 (lower = safer). Weighted composite score → lett
 | 61–80 | D |
 | 81–100 | F (High Risk) |
 
+> **Display convention:** Lower score = safer. UI always shows explicit label to prevent misinterpretation, e.g. "Risk Score: 18/100 — Low Risk". Never show a bare number without context.
+
 ---
 
 ## Yield Data
@@ -118,10 +126,12 @@ Each dimension scores 0–100 (lower = safer). Weighted composite score → lett
 ### 1. Home Page (`/`)
 
 - Search bar: input vault address or ENS
-- Hot vaults list: curated list grouped by protocol and chain
+- Hot vaults list: curated list grouped by protocol and chain (sourced from `/data/featured-vaults.json`, manually maintained; automated TVL-based ranking is v2)
 - Quick-filter by chain and protocol
 
 ### 2. Vault Detail Page (`/vault/[chainId]/[address]`)
+
+**Loading state:** Show skeleton placeholders for each card while data loads. Dimensions render progressively as each data source resolves — top bar loads first (fast metadata), risk cards load as on-chain reads complete.
 
 **Top bar:**
 - Vault name + protocol badge + chain badge
@@ -194,4 +204,4 @@ Up to 3 vaults side-by-side with all dimensions aligned.
 
 1. Weight calibration — the 40/35/25 weights are initial estimates. Should be validated against known "risky" vaults to check if scoring matches expert judgment.
 2. Curator identity data source — no on-chain standard for this. May need a curated off-chain registry initially.
-3. Rate limiting — DefiLlama and RPC calls need caching strategy to avoid hitting limits on popular vaults.
+3. **Caching strategy (resolved):** Next.js route-level caching with 5-minute TTL for DefiLlama and The Graph calls. On-chain reads (viem) are not cached at the route level — rely on RPC provider's built-in node caching. Static featured vaults list served from `/data/featured-vaults.json` (manually curated JSON file; automated TVL ranking is v2).
