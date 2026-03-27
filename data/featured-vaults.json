@@ -1,0 +1,26 @@
+[
+  {
+    "name": "Gauntlet USDC Core",
+    "address": "0xBEEF01735c132Ada46AA9aA4c54623cAA92A64CB",
+    "chainId": 1,
+    "protocol": "morpho",
+    "defillamaPoolId": "6a5cce30-3ab1-4e06-a3d9-22e81cfed0f6",
+    "tags": ["stablecoin", "core"]
+  },
+  {
+    "name": "Steakhouse USDC",
+    "address": "0xBEEF069f4F19fcA43c2e4e3b52b5ec71C5069CA",
+    "chainId": 1,
+    "protocol": "morpho",
+    "defillamaPoolId": "placeholder-replace-me",
+    "tags": ["stablecoin"]
+  },
+  {
+    "name": "Moonwell Flagship ETH",
+    "address": "0xa0E430870c4604CcE522E4787Af78adCEEe2B44",
+    "chainId": 8453,
+    "protocol": "morpho",
+    "defillamaPoolId": "placeholder-replace-me-base",
+    "tags": ["eth", "base"]
+  }
+]
