@@ -59,7 +59,10 @@ export function YieldCard({
             <Tooltip
               contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
               labelStyle={{ color: '#9ca3af' }}
-              formatter={(v: number) => [`${v.toFixed(2)}%`, 'APY']}
+              formatter={(v) => {
+                const formatted = typeof v === 'number' ? `${v.toFixed(2)}%` : `${v}`
+                return [formatted, 'APY'] as [string, string]
+              }}
             />
             <Line type="monotone" dataKey="apy" stroke="#818cf8" dot={false} strokeWidth={2} />
           </LineChart>
