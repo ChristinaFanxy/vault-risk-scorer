@@ -18,6 +18,10 @@ export interface MorphoCuratorData {
   timelockSeconds: number           // on-chain timelock value
   vaultsManaged: number             // total vaults by same curator
   warnings: string[]                // warning type strings
+  guardian: string                  // zero address = no guardian
+  owner: string                     // vault owner address
+  incidentCount: number             // markets with realizedBadDebt > $1
+  curatorBorrowsFromVault: boolean  // curator has open borrow position in vault markets
 }
 
 const VAULT_YIELD_QUERY = `
@@ -43,9 +47,25 @@ const VAULT_CURATOR_QUERY = `
       state {
         curator
         timelock
+        guardian
+        owner
         curators { name verified }
+        allocation {
+          market {
+            uniqueKey
+            realizedBadDebt { usd }
+          }
+        }
       }
       warnings { type level }
+    }
+  }
+`
+
+const CURATOR_POSITIONS_QUERY = `
+  query CuratorPositions($userAddress: String!, $marketKeys: [String!]!) {
+    marketPositions(where: { userAddress_in: [$userAddress], marketUniqueKey_in: $marketKeys }) {
+      items { state { borrowAssets } }
     }
   }
 `
@@ -113,17 +133,25 @@ export async function fetchMorphoYieldData(
   }
 }
 
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+const BAD_DEBT_THRESHOLD_USD = 1  // ignore dust amounts below $1
+
 export async function fetchMorphoCuratorData(
   vaultAddress: string,
   chainId: number
 ): Promise<MorphoCuratorData> {
-  // Step 1: fetch vault curator info
+  type Allocation = { market: { uniqueKey: string; realizedBadDebt: { usd: number } } }
+
+  // Step 1: fetch vault curator info + guardian/owner + market bad debt
   const { vault } = await gql<{
     vault: {
       state: {
         curator: string
         timelock: number
+        guardian: string
+        owner: string
         curators: Array<{ name: string; verified: boolean }>
+        allocation: Allocation[]
       }
       warnings: Array<{ type: string; level: string }>
     }
@@ -131,18 +159,27 @@ export async function fetchMorphoCuratorData(
 
   const curatorAddress = vault.state.curator
   const primaryCurator = vault.state.curators[0] ?? null
+  const marketKeys = vault.state.allocation.map(a => a.market.uniqueKey)
 
-  // Step 2: count vaults managed by the same curator address
-  let vaultsManaged = 1
-  try {
-    const { vaults } = await gql<{ vaults: { items: Array<{ address: string }> } }>(
+  // Incident count: markets with realized bad debt above dust threshold
+  const incidentCount = vault.state.allocation.filter(
+    a => a.market.realizedBadDebt.usd > BAD_DEBT_THRESHOLD_USD
+  ).length
+
+  // Steps 2+3 in parallel: count vaults managed + check curator borrow positions
+  const [vaultsManaged, curatorBorrowsFromVault] = await Promise.all([
+    gql<{ vaults: { items: Array<{ address: string }> } }>(
       VAULTS_BY_CURATOR_QUERY,
       { curatorAddresses: [curatorAddress] }
-    )
-    vaultsManaged = Math.max(1, vaults.items.length)
-  } catch {
-    // non-critical — fall back to 1
-  }
+    ).then(r => Math.max(1, r.vaults.items.length)).catch(() => 1),
+
+    marketKeys.length > 0
+      ? gql<{ marketPositions: { items: Array<{ state: { borrowAssets: number } }> } }>(
+          CURATOR_POSITIONS_QUERY,
+          { userAddress: curatorAddress, marketKeys }
+        ).then(r => r.marketPositions.items.some(p => p.state.borrowAssets > 0)).catch(() => false)
+      : Promise.resolve(false),
+  ])
 
   return {
     curatorAddress,
@@ -151,5 +188,9 @@ export async function fetchMorphoCuratorData(
     timelockSeconds: vault.state.timelock,
     vaultsManaged,
     warnings: vault.warnings.map(w => w.type),
+    guardian: vault.state.guardian ?? ZERO_ADDRESS,
+    owner: vault.state.owner,
+    incidentCount,
+    curatorBorrowsFromVault,
   }
 }

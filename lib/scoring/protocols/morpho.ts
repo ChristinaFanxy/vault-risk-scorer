@@ -288,17 +288,22 @@ export async function fetchMorphoVaultData(
     ? curatorData.timelockSeconds / 3600
     : 0
 
+  // Derive permission scope from guardian address:
+  // no guardian (zero address) = curator can change anything → broad
+  // real guardian = a separate entity can veto changes → narrow
+  const ZERO = '0x0000000000000000000000000000000000000000'
+  const permissionScope: VaultData['permissionScope'] = curatorData
+    ? (curatorData.guardian === ZERO ? 'broad' : 'narrow')
+    : 'medium'
+
   const placeholderFields: string[] = [
     'maxLtvPct',
     'liquidationThresholdPct',
     'liquidationBonusPct',
     'liquidationMechanism',
     'oracleManipulationSurface',
-    'permissionScope',
-    'incidentCount',
-    'curatorBorrowsFromVault',
     ...(assets.length === 0 ? ['assets'] : []),
-    ...(curatorData === null ? ['curatorType', 'vaultsManaged'] : []),
+    ...(curatorData === null ? ['curatorType', 'vaultsManaged', 'permissionScope', 'incidentCount', 'curatorBorrowsFromVault'] : []),
   ]
 
   return {
@@ -322,11 +327,11 @@ export async function fetchMorphoVaultData(
     curatorAddress: curatorData?.curatorAddress ?? address,
     curatorName: curatorData?.curatorName ?? null,
     curatorType,
-    permissionScope: 'medium',
+    permissionScope,
     timelockHours,
     vaultsManaged: curatorData?.vaultsManaged ?? 1,
-    incidentCount: 0,
-    curatorBorrowsFromVault: false,
+    incidentCount: curatorData?.incidentCount ?? 0,
+    curatorBorrowsFromVault: curatorData?.curatorBorrowsFromVault ?? false,
     placeholderFields,
   }
 }
