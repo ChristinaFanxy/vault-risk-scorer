@@ -23,12 +23,33 @@ async function VaultContent({ chainId, address }: { chainId: string; address: st
   const defillamaPoolId = featured?.defillamaPoolId ?? address
 
   let score
+  let fetchError: string | null = null
   try {
     const fetchTime = Date.now()
     const vaultData = await fetchMorphoVaultData(address, cid, defillamaPoolId)
     score = scoreVault(vaultData, fetchTime)
-  } catch {
-    notFound()
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    // Only 404 if we're confident it's not a vault — RPC errors say "contract" or "revert"
+    const isNotVault = /ContractFunctionExecutionError|does not match|revert|invalid address/i.test(msg)
+    if (isNotVault) notFound()
+    fetchError = msg
+  }
+
+  if (fetchError || !score) {
+    return (
+      <main className="min-h-screen bg-gray-950 text-white p-8 flex items-center justify-center">
+        <div className="max-w-md text-center">
+          <div className="text-4xl mb-4">⚠️</div>
+          <h1 className="text-xl font-bold mb-2">Unable to load vault data</h1>
+          <p className="text-gray-400 text-sm mb-4">
+            This could be a temporary network issue or the vault may not be supported yet.
+          </p>
+          <p className="text-gray-600 text-xs font-mono break-all mb-6">{address}</p>
+          <a href="/" className="text-indigo-400 hover:text-indigo-300 text-sm">← Back to search</a>
+        </div>
+      </main>
+    )
   }
 
   const tvlFormatted = score.tvlUsd >= 1_000_000

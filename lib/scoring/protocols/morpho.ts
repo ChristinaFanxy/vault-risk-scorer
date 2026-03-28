@@ -3,7 +3,7 @@ import { getAddress, type Address } from 'viem'
 import { getClient, withRetry } from '@/lib/viemClient'
 import { fetchVaultYield } from '@/lib/defillama'
 import { fetchMorphoBadDebt } from '@/lib/thegraph'
-import { fetchMorphoCuratorData } from '@/lib/morphoApi'
+import { fetchMorphoCuratorData, fetchMorphoYieldData } from '@/lib/morphoApi'
 import type { ChainId, VaultData, AssetClass, OracleType, CuratorType } from '@/lib/scoring/types'
 
 // Same address on Ethereum mainnet and Base
@@ -266,13 +266,18 @@ export async function fetchMorphoVaultData(
   const client = getClient(chainId)
   const checksumAddress = getAddress(address.toLowerCase()) as Address
 
-  const [name, yield_, badDebt, assets, curatorData] = await Promise.all([
+  const isDefillamaId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(defillamaPoolId)
+
+  const [name, yieldResult, badDebt, assets, curatorData] = await Promise.all([
     withRetry(() => client.readContract({ address: checksumAddress, abi: METAMORPHO_ABI, functionName: 'name' })),
-    fetchVaultYield(defillamaPoolId),
+    isDefillamaId
+      ? fetchVaultYield(defillamaPoolId).catch(() => fetchMorphoYieldData(address, chainId))
+      : fetchMorphoYieldData(address, chainId),
     fetchMorphoBadDebt(address, chainId),
     fetchMarketAssets(checksumAddress, chainId, client).catch(() => []),
     fetchMorphoCuratorData(address, chainId).catch(() => null),
   ])
+  const yield_ = yieldResult
 
   // Derive curator type from Morpho's verification status
   const curatorType: CuratorType = curatorData?.curatorVerified ? 'institution'
