@@ -24,17 +24,25 @@ export function scoreAssetRisk(vault: VaultData): DimensionScore {
   const indicators: DimensionScore['indicators'] = []
   let score = 0
 
-  // 1. Collateral type (dominant asset by weight)
-  const dominant = vault.assets.reduce((a, b) => a.vaultWeightPct >= b.vaultWeightPct ? a : b)
+  // 1. Collateral type — all real assets (exclude idle markets shown as UNKNOWN)
+  const activeAssets = vault.assets
+    .filter(a => a.symbol !== 'UNKNOWN')
+    .sort((a, b) => b.vaultWeightPct - a.vaultWeightPct)
+  const dominant = activeAssets.length > 0
+    ? activeAssets[0]
+    : vault.assets.reduce((a, b) => a.vaultWeightPct >= b.vaultWeightPct ? a : b)
   const assetTypeScore = ASSET_CLASS_SCORE[dominant.assetClass]
   score += assetTypeScore
   const assetLabel = dominant.assetClass === 'stablecoin' ? 'Stablecoin (low volatility)'
     : dominant.assetClass === 'blue-chip' ? 'Blue-chip (ETH/BTC class)'
     : 'Long-tail token (high risk)'
+  const assetListValue = activeAssets.length <= 1
+    ? `${dominant.symbol} — ${assetLabel}`
+    : activeAssets.map(a => `${a.symbol} (${a.vaultWeightPct.toFixed(1)}%)`).join(' · ')
   indicators.push({
     name: 'Collateral type',
     desc: 'What borrowers put up as collateral. Stablecoins are safest; unknown tokens can lose value rapidly.',
-    value: `${dominant.symbol} — ${assetLabel}`,
+    value: assetListValue,
     contribution: assetTypeScore,
     status: dominant.assetClass === 'stablecoin' ? 'good'
       : dominant.assetClass === 'blue-chip' ? 'ok' : 'bad',
@@ -86,7 +94,7 @@ export function scoreAssetRisk(vault: VaultData): DimensionScore {
 
   // 5. Concentration
   const maxWeight = Math.max(...vault.assets.map(a => a.vaultWeightPct))
-  const concentrated = vault.assets.length > 1 && maxWeight > 50
+  const concentrated = activeAssets.length > 1 && maxWeight > 50
   const concScore = concentrated ? 10 : 0
   score += concScore
   indicators.push({
