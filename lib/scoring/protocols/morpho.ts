@@ -3,7 +3,7 @@ import { getAddress, type Address } from 'viem'
 import { getClient, withRetry } from '@/lib/viemClient'
 import { fetchVaultYield } from '@/lib/defillama'
 import { fetchMorphoBadDebt } from '@/lib/thegraph'
-import { fetchMorphoCuratorData, fetchMorphoYieldData, fetchMorphoV2Data } from '@/lib/morphoApi'
+import { fetchMorphoCuratorData, fetchMorphoYieldData, fetchMorphoV2Data, fetchVaultAllocation } from '@/lib/morphoApi'
 import { fetchTokenVolatility30d, fetchTokenLiquidityUsd } from '@/lib/tokenData'
 import type { ChainId, VaultData, AssetClass, OracleType, CuratorType } from '@/lib/scoring/types'
 
@@ -185,8 +185,8 @@ async function fetchMarketAssets(
     )
   )
 
-  // Get market params + supply state in parallel
-  const [allParams, allStates] = await Promise.all([
+  // Get market params + API allocation amounts in parallel (no longer need on-chain market state)
+  const [allParams, apiAllocation] = await Promise.all([
     Promise.all(marketIds.map(id =>
       withRetry(() => client.readContract({
         address: MORPHO_BLUE_ADDRESS,
@@ -195,51 +195,48 @@ async function fetchMarketAssets(
         args: [id],
       }))
     )),
-    Promise.all(marketIds.map(id =>
-      client.readContract({
-        address: MORPHO_BLUE_ADDRESS,
-        abi: MORPHO_BLUE_ABI,
-        functionName: 'market',
-        args: [id],
-      }).catch(() => null)
-    )),
+    fetchVaultAllocation(vaultAddress, chainIdNum).catch(() => new Map<string, number>()),
   ])
 
-  // Total supply for weight calculation
-  const totalSupply = allStates.reduce((s, m) => s + (m ? Number(m.totalSupplyAssets) : 0), 0)
-
   // Deduplicate by collateral token — one asset entry per unique token
+  // Use API per-vault allocation amount for weights; fall back to equal weight if unavailable
   const seen = new Map<string, number>() // addr → index in result
   const deduped: Array<{
     params: typeof allParams[0]
-    supplyAssets: number
+    supplyAssetsUsd: number
   }> = []
 
   for (let i = 0; i < allParams.length; i++) {
     const addr = allParams[i].collateralToken.toLowerCase()
+    const marketKey = marketIds[i].toLowerCase()
+    const marketUsd = apiAllocation.get(marketKey) ?? 0
     if (seen.has(addr)) {
-      // Accumulate supply into the existing entry
-      const idx = seen.get(addr)!
-      deduped[idx].supplyAssets += allStates[i] ? Number(allStates[i]!.totalSupplyAssets) : 0
+      deduped[seen.get(addr)!].supplyAssetsUsd += marketUsd
     } else {
       seen.set(addr, deduped.length)
-      deduped.push({ params: allParams[i], supplyAssets: allStates[i] ? Number(allStates[i]!.totalSupplyAssets) : 0 })
+      deduped.push({ params: allParams[i], supplyAssetsUsd: marketUsd })
     }
   }
 
+  // When API data is available, filter out markets where this vault has 0 allocation
+  const active = apiAllocation.size > 0
+    ? deduped.filter(d => d.supplyAssetsUsd > 0)
+    : deduped
+  const totalSupply = active.reduce((s, d) => s + d.supplyAssetsUsd, 0)
+
   // Read symbols, detect oracle types, and fetch real token market data in parallel
   const [symbols, oracleTypes, tokenMetrics] = await Promise.all([
-    Promise.all(deduped.map(({ params }) =>
+    Promise.all(active.map(({ params }) =>
       client.readContract({
         address: params.collateralToken,
         abi: ERC20_SYMBOL_ABI,
         functionName: 'symbol',
       }).catch(() => 'UNKNOWN')
     )),
-    Promise.all(deduped.map(({ params }) =>
+    Promise.all(active.map(({ params }) =>
       detectOracleType(client, params.oracle as Address)
     )),
-    Promise.all(deduped.map(({ params }) =>
+    Promise.all(active.map(({ params }) =>
       Promise.all([
         fetchTokenVolatility30d(params.collateralToken, chainIdNum),
         fetchTokenLiquidityUsd(params.collateralToken, chainIdNum),
@@ -254,12 +251,12 @@ async function fetchMarketAssets(
     : uniqueOracleTypes.has('uniswap-twap') ? 'medium'
     : 'low'
 
-  const assets = deduped.map(({ params, supplyAssets }, i) => {
+  const assets = active.map(({ params, supplyAssetsUsd }, i) => {
     const addr = params.collateralToken.toLowerCase()
     const info = TOKEN_REGISTRY[addr]
     const symbol = symbols[i] as string
     const assetClass = info?.assetClass ?? classifyBySymbol(symbol)
-    const weight = totalSupply > 0 ? (supplyAssets / totalSupply) * 100 : 100 / deduped.length
+    const weight = totalSupply > 0 ? (supplyAssetsUsd / totalSupply) * 100 : 100 / deduped.length
     const [apiVol, apiLiq] = tokenMetrics[i]
 
     return {

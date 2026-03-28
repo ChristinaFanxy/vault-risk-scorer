@@ -57,6 +57,19 @@ export interface MorphoCuratorData {
   hasOracleWarning: boolean         // any market has incorrect_oracle_configuration
 }
 
+const VAULT_ALLOCATION_QUERY = `
+  query VaultAllocation($address: String!, $chainId: Int!) {
+    vault: vaultByAddress(address: $address, chainId: $chainId) {
+      state {
+        allocation {
+          supplyAssetsUsd
+          market { uniqueKey }
+        }
+      }
+    }
+  }
+`
+
 const VAULT_YIELD_QUERY = `
   query VaultYield($address: String!, $chainId: Int!) {
     vault: vaultByAddress(address: $address, chainId: $chainId) {
@@ -313,6 +326,26 @@ export async function fetchMorphoV2Data(
     markets,
     hasAdapterCaps,
   }
+}
+
+/** Returns a map of marketUniqueKey (lowercase) → this vault's USD allocation to that market */
+export async function fetchVaultAllocation(
+  vaultAddress: string,
+  chainId: number
+): Promise<Map<string, number>> {
+  const { vault } = await gql<{
+    vault: {
+      state: {
+        allocation: Array<{ supplyAssetsUsd: number | null; market: { uniqueKey: string } }>
+      }
+    }
+  }>(VAULT_ALLOCATION_QUERY, { address: vaultAddress, chainId })
+
+  return new Map(
+    vault.state.allocation
+      .filter(a => (a.supplyAssetsUsd ?? 0) > 0)
+      .map(a => [a.market.uniqueKey.toLowerCase(), a.supplyAssetsUsd!])
+  )
 }
 
 async function gql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
