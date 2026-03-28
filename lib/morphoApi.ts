@@ -77,8 +77,8 @@ const CURATOR_POSITIONS_QUERY = `
 `
 
 const VAULTS_BY_CURATOR_QUERY = `
-  query VaultsByCurator($curatorAddresses: [String!]!) {
-    vaults(where: { curatorAddress_in: $curatorAddresses }) {
+  query VaultsByCurator($curatorAddresses: [String!]!, $chainIds: [Int!]!) {
+    vaults(where: { curatorAddress_in: $curatorAddresses, chainId_in: $chainIds }) {
       items { address }
     }
   }
@@ -207,7 +207,7 @@ export async function fetchMorphoCuratorData(
   const [vaultsManaged, curatorBorrowsFromVault] = await Promise.all([
     gql<{ vaults: { items: Array<{ address: string }> } }>(
       VAULTS_BY_CURATOR_QUERY,
-      { curatorAddresses: [curatorAddress] }
+      { curatorAddresses: [curatorAddress], chainIds: [1, 8453] }
     ).then(r => Math.max(1, r.vaults.items.length)).catch(() => 1),
 
     marketKeys.length > 0
