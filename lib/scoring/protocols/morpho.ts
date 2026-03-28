@@ -303,9 +303,12 @@ export async function fetchMorphoVaultData(
   ])
   const yield_ = yieldResult
   const { assets } = marketResult
-  // Prefer Morpho API oracle warning over on-chain detection (which misclassifies MorphoChainlinkOracleV2)
-  const oracleManipulationSurface: VaultData['oracleManipulationSurface'] = curatorData?.hasOracleWarning
-    ? 'high'
+  // When Morpho API is available, trust its oracle validation over on-chain detection.
+  // On-chain detectOracleType() misclassifies MorphoChainlinkOracleV2 as 'custom' when
+  // BASE_FEED_ONE() reverts (zero address). Morpho's incorrect_oracle_configuration warning
+  // is the authoritative source — if it's not flagged, the oracle is fine.
+  const oracleManipulationSurface: VaultData['oracleManipulationSurface'] = curatorData
+    ? (curatorData.hasOracleWarning ? 'high' : 'low')
     : marketResult.oracleManipulationSurface
 
   // Derive curator type from Morpho's verification status
