@@ -4,6 +4,7 @@ import { getClient, withRetry } from '@/lib/viemClient'
 import { fetchVaultYield } from '@/lib/defillama'
 import { fetchMorphoBadDebt } from '@/lib/thegraph'
 import { fetchMorphoCuratorData, fetchMorphoYieldData } from '@/lib/morphoApi'
+import { fetchTokenVolatility30d, fetchTokenLiquidityUsd } from '@/lib/tokenData'
 import type { ChainId, VaultData, AssetClass, OracleType, CuratorType } from '@/lib/scoring/types'
 
 // Same address on Ethereum mainnet and Base
@@ -162,7 +163,8 @@ type MarketAssetsResult = {
 async function fetchMarketAssets(
   vaultAddress: Address,
   chainId: ChainId,
-  client: ReturnType<typeof getClient>
+  client: ReturnType<typeof getClient>,
+  chainIdNum: number
 ): Promise<MarketAssetsResult> {
   const queueLength = await withRetry(() =>
     client.readContract({ address: vaultAddress, abi: METAMORPHO_ABI, functionName: 'withdrawQueueLength' })
@@ -225,8 +227,8 @@ async function fetchMarketAssets(
     }
   }
 
-  // Read symbols + detect oracle types in parallel
-  const [symbols, oracleTypes] = await Promise.all([
+  // Read symbols, detect oracle types, and fetch real token market data in parallel
+  const [symbols, oracleTypes, tokenMetrics] = await Promise.all([
     Promise.all(deduped.map(({ params }) =>
       client.readContract({
         address: params.collateralToken,
@@ -236,6 +238,12 @@ async function fetchMarketAssets(
     )),
     Promise.all(deduped.map(({ params }) =>
       detectOracleType(client, params.oracle as Address)
+    )),
+    Promise.all(deduped.map(({ params }) =>
+      Promise.all([
+        fetchTokenVolatility30d(params.collateralToken, chainIdNum),
+        fetchTokenLiquidityUsd(params.collateralToken, chainIdNum),
+      ])
     )),
   ])
 
@@ -252,14 +260,16 @@ async function fetchMarketAssets(
     const symbol = symbols[i] as string
     const assetClass = info?.assetClass ?? classifyBySymbol(symbol)
     const weight = totalSupply > 0 ? (supplyAssets / totalSupply) * 100 : 100 / deduped.length
+    const [apiVol, apiLiq] = tokenMetrics[i]
 
     return {
       address: params.collateralToken,
       symbol,
       assetClass,
       oracleType: oracleTypes[i] as OracleType,
-      liquidityDepthUsd: info?.liquidityDepthUsd ?? defaultLiquidity(assetClass),
-      volatility30d: info?.volatility30d ?? defaultVolatility(assetClass),
+      // API data → TOKEN_REGISTRY estimate → class default
+      liquidityDepthUsd: apiLiq ?? info?.liquidityDepthUsd ?? defaultLiquidity(assetClass),
+      volatility30d: apiVol ?? info?.volatility30d ?? defaultVolatility(assetClass),
       vaultWeightPct: weight,
     }
   })
@@ -288,7 +298,7 @@ export async function fetchMorphoVaultData(
       ? fetchVaultYield(defillamaPoolId).catch(() => fetchMorphoYieldData(address, chainId))
       : fetchMorphoYieldData(address, chainId),
     fetchMorphoBadDebt(address, chainId),
-    fetchMarketAssets(checksumAddress, chainId, client).catch(() => ({ assets: [], oracleManipulationSurface: 'low' as const })),
+    fetchMarketAssets(checksumAddress, chainId, client, chainId).catch(() => ({ assets: [], oracleManipulationSurface: 'low' as const })),
     fetchMorphoCuratorData(address, chainId).catch(() => null),
   ])
   const yield_ = yieldResult
