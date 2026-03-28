@@ -3,7 +3,7 @@ import { getAddress, type Address } from 'viem'
 import { getClient, withRetry } from '@/lib/viemClient'
 import { fetchVaultYield } from '@/lib/defillama'
 import { fetchMorphoBadDebt } from '@/lib/thegraph'
-import { fetchMorphoCuratorData, fetchMorphoYieldData } from '@/lib/morphoApi'
+import { fetchMorphoCuratorData, fetchMorphoYieldData, fetchMorphoV2Data } from '@/lib/morphoApi'
 import { fetchTokenVolatility30d, fetchTokenLiquidityUsd } from '@/lib/tokenData'
 import type { ChainId, VaultData, AssetClass, OracleType, CuratorType } from '@/lib/scoring/types'
 
@@ -278,6 +278,132 @@ async function fetchMarketAssets(
 }
 
 /**
+ * Build a VaultData for a Morpho Vault V2.
+ * V2 uses per-function timelocks, adapter-based allocation, and a different API schema.
+ * Asset/liquidation risk is fully scored only when MarketV1 caps are present;
+ * Adapter caps are opaque so those dimensions fall back to limited data.
+ */
+async function fetchMorphoV2VaultData(
+  address: string,
+  chainId: ChainId,
+  v2: Awaited<ReturnType<typeof fetchMorphoV2Data>>
+): Promise<VaultData> {
+
+  // Build assets from MarketV1 caps (same logic as V1 markets, minus on-chain oracle detection)
+  let assets: VaultData['assets'] = []
+  let oracleManipulationSurface: VaultData['oracleManipulationSurface'] = 'low'
+  let weightedAvgLltvPct = 80
+  let totalRealizedBadDebtUsd = 0
+  let incidentCount = 0
+
+  if (v2.markets.length > 0) {
+    const totalSupply = v2.markets.reduce((s, m) => s + m.supplyAssetsUsd, 0)
+    const hasAnyOracleWarning = v2.markets.some(m => m.hasOracleWarning)
+    oracleManipulationSurface = hasAnyOracleWarning ? 'high' : 'low'
+
+    totalRealizedBadDebtUsd = v2.markets.reduce((s, m) => s + m.realizedBadDebtUsd, 0)
+    incidentCount = v2.markets.filter(m => m.realizedBadDebtUsd > 1).length
+
+    // Weighted avg LLTV
+    const activeMarkets = v2.markets.filter(m => m.lltv !== '0')
+    const activeTotalSupply = activeMarkets.reduce((s, m) => s + m.supplyAssetsUsd, 0)
+    weightedAvgLltvPct = activeTotalSupply > 0
+      ? activeMarkets.reduce((s, m) => {
+          const lltv = Number(m.lltv) / 1e18 * 100
+          const weight = m.supplyAssetsUsd / activeTotalSupply
+          return s + lltv * weight
+        }, 0)
+      : activeMarkets.length > 0
+        ? activeMarkets.reduce((s, m) => s + Number(m.lltv) / 1e18 * 100, 0) / activeMarkets.length
+        : 80
+
+    // Fetch real token market data in parallel
+    const tokenMetrics = await Promise.all(
+      v2.markets.map(m => Promise.all([
+        fetchTokenVolatility30d(m.collateralAddress, chainId),
+        fetchTokenLiquidityUsd(m.collateralAddress, chainId),
+      ]))
+    )
+
+    // Deduplicate by collateral address
+    const seen = new Set<string>()
+    for (let i = 0; i < v2.markets.length; i++) {
+      const m = v2.markets[i]
+      const addr = m.collateralAddress.toLowerCase()
+      if (seen.has(addr)) continue
+      seen.add(addr)
+
+      const info = TOKEN_REGISTRY[addr]
+      const assetClass = info?.assetClass ?? classifyBySymbol(m.collateralSymbol)
+      const weight = totalSupply > 0 ? (m.supplyAssetsUsd / totalSupply) * 100 : 100 / v2.markets.length
+      const [apiVol, apiLiq] = tokenMetrics[i]
+
+      // V2 oracle detection: trust Morpho's warning flag, no on-chain probe
+      const oracleType: OracleType = m.hasOracleWarning ? 'custom' : 'chainlink'
+
+      assets.push({
+        address: m.collateralAddress,
+        symbol: m.collateralSymbol,
+        assetClass,
+        oracleType,
+        liquidityDepthUsd: apiLiq ?? info?.liquidityDepthUsd ?? defaultLiquidity(assetClass),
+        volatility30d: apiVol ?? info?.volatility30d ?? defaultVolatility(assetClass),
+        vaultWeightPct: weight,
+      })
+    }
+  }
+
+  const curatorType: CuratorType = v2.curatorVerified ? 'institution'
+    : v2.curatorName ? 'known-team'
+    : 'anonymous'
+
+  // V2 uses addAdapter timelock as the key protection gate
+  const timelockHours = v2.addAdapterTimelockSeconds / 3600
+
+  // V2 has no guardian — curator can execute changes after timelock
+  const permissionScope: VaultData['permissionScope'] = 'broad'
+
+  const liquidationThresholdPct = weightedAvgLltvPct
+  const maxLtvPct = Math.max(liquidationThresholdPct - 5, 0)
+
+  const placeholderFields: string[] = [
+    'liquidationBonusPct',
+    'liquidationMechanism',
+    ...(assets.length === 0 ? ['assets', 'maxLtvPct', 'liquidationThresholdPct', 'oracleManipulationSurface'] : []),
+    ...(v2.hasAdapterCaps ? ['adapterCapsOpaque'] : []),
+  ]
+
+  return {
+    address,
+    chainId,
+    protocol: 'morpho',
+    name: v2.name,
+    tvlUsd: v2.tvlUsd,
+    currentApyPct: v2.currentApyPct,
+    apy7dAvg: v2.apy7dAvg,
+    apy30dAvg: v2.apy30dAvg,
+    apy90dAvg: v2.apy90dAvg,
+    apyHistory: v2.apyHistory,
+    assets,
+    maxLtvPct,
+    liquidationThresholdPct,
+    liquidationBonusPct: 5,
+    liquidationMechanism: 'dutch-auction',
+    historicalBadDebtUsd: totalRealizedBadDebtUsd,
+    oracleManipulationSurface,
+    curatorAddress: v2.curatorAddress,
+    curatorName: v2.curatorName,
+    curatorType,
+    permissionScope,
+    timelockHours,
+    vaultsManaged: v2.vaultsManaged,
+    incidentCount,
+    curatorBorrowsFromVault: false,
+    placeholderFields,
+  }
+}
+
+/**
  * Fetches all data needed to score a MetaMorpho vault.
  * Fields that could not be fetched are hardcoded to safe-ish defaults
  * and recorded in `placeholderFields` so the UI can show "estimated" labels.
@@ -287,6 +413,13 @@ export async function fetchMorphoVaultData(
   chainId: ChainId,
   defillamaPoolId: string
 ): Promise<VaultData> {
+  // Detect Morpho Vault V2: try the V2 API first (fast, no on-chain call needed).
+  // V2 vaults are not indexed in the V1 API and have a completely different on-chain interface.
+  const v2Data = await fetchMorphoV2Data(address, chainId).catch(() => null)
+  if (v2Data !== null) {
+    return fetchMorphoV2VaultData(address, chainId, v2Data)
+  }
+
   const client = getClient(chainId)
   const checksumAddress = getAddress(address.toLowerCase()) as Address
 

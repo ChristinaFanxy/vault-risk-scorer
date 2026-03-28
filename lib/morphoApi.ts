@@ -2,6 +2,36 @@
 // Morpho Blue public GraphQL API — no API key required.
 const MORPHO_API = 'https://blue-api.morpho.org/graphql'
 
+export interface MorphoV2Data {
+  name: string
+  tvlUsd: number
+  currentApyPct: number
+  apy7dAvg: number | null   // 7-day rolling avg from daily history
+  apy30dAvg: number | null  // 30-day rolling avg
+  apy90dAvg: number | null  // 90-day rolling avg
+  apyHistory: Array<{ timestamp: number; apyPct: number }>
+
+  curatorAddress: string    // owner address (V2 has no separate curator field)
+  curatorName: string | null
+  curatorVerified: boolean
+  // The most critical timelock: addAdapter controls what new strategies can be added
+  addAdapterTimelockSeconds: number
+  vaultsManaged: number     // V2 vaults managed by this curator
+  warnings: string[]
+
+  // Markets from MarketV1 caps (subset of caps that route to Morpho Blue v1 markets)
+  markets: Array<{
+    lltv: string            // uint256 as string, 1e18 = 100%
+    collateralAddress: string
+    collateralSymbol: string
+    oracleAddress: string
+    supplyAssetsUsd: number
+    realizedBadDebtUsd: number
+    hasOracleWarning: boolean
+  }>
+  hasAdapterCaps: boolean   // true if any caps are opaque adapter-type (no market data)
+}
+
 export interface MorphoYieldData {
   tvlUsd: number
   currentApyPct: number
@@ -83,6 +113,144 @@ const VAULTS_BY_CURATOR_QUERY = `
     }
   }
 `
+
+const VAULT_V2_QUERY = `
+  query VaultV2($address: String!, $chainId: Int!) {
+    vault: vaultV2ByAddress(address: $address, chainId: $chainId) {
+      address name totalAssetsUsd netApy avgNetApy
+      owner { address }
+      curators { items { name verified addresses { address } } }
+      warnings { type level }
+      timelocks { selector functionName duration }
+      caps { items {
+        type allocation
+        data {
+          ... on MarketV1CapData {
+            market {
+              lltv
+              realizedBadDebt { usd }
+              state { supplyAssetsUsd }
+              warnings { type }
+              collateralAsset { address symbol }
+              oracle { address }
+            }
+          }
+        }
+      }}
+      historicalState { avgNetApy { x y } }
+    }
+  }
+`
+
+const V2_VAULTS_BY_CURATOR_QUERY = `
+  query V2VaultsByCurator($curatorAddresses: [String!]!, $chainIds: [Int!]!) {
+    vaultV2s(where: { curatorAddress_in: $curatorAddresses, chainId_in: $chainIds }) {
+      items { address }
+    }
+  }
+`
+
+// Selector for addAdapter function in V2 vaults
+const ADD_ADAPTER_SELECTOR = '0x60d54d41'
+
+export async function fetchMorphoV2Data(
+  vaultAddress: string,
+  chainId: number
+): Promise<MorphoV2Data> {
+  type Cap = {
+    type: string
+    data: {
+      market?: {
+        lltv: string
+        realizedBadDebt: { usd: number }
+        state: { supplyAssetsUsd: number }
+        warnings: Array<{ type: string }>
+        collateralAsset: { address: string; symbol: string }
+        oracle: { address: string }
+      }
+    }
+  }
+  type Point = { x: number; y: number | null }
+
+  const { vault } = await gql<{
+    vault: {
+      address: string
+      name: string
+      totalAssetsUsd: number
+      netApy: number
+      avgNetApy: number | null
+      owner: { address: string }
+      curators: { items: Array<{ name: string; verified: boolean; addresses: Array<{ address: string }> }> }
+      warnings: Array<{ type: string; level: string }>
+      timelocks: Array<{ selector: string; functionName: string; duration: number }>
+      caps: { items: Cap[] }
+      historicalState: { avgNetApy: Point[] }
+    }
+  }>(VAULT_V2_QUERY, { address: vaultAddress, chainId })
+
+  const primaryCurator = vault.curators.items[0] ?? null
+  const curatorAddresses = primaryCurator?.addresses.map(a => a.address) ?? [vault.owner.address]
+
+  // Per-function timelocks — find addAdapter (the critical "add new strategy" gate)
+  const addAdapterTimelock = vault.timelocks.find(t => t.selector === ADD_ADAPTER_SELECTOR)
+  const addAdapterTimelockSeconds = addAdapterTimelock?.duration ?? 0
+
+  // Count V2 vaults managed by this curator
+  const vaultsManaged = await gql<{ vaultV2s: { items: Array<{ address: string }> } }>(
+    V2_VAULTS_BY_CURATOR_QUERY,
+    { curatorAddresses, chainIds: [1, 8453] }
+  ).then(r => Math.max(1, r.vaultV2s.items.length)).catch(() => 1)
+
+  // Parse caps: separate MarketV1 (scoreable) from Adapter (opaque)
+  const hasAdapterCaps = vault.caps.items.some(c => c.type === 'Adapter')
+  const markets = vault.caps.items
+    .filter(c => c.type === 'MarketV1' && c.data.market)
+    .map(c => {
+      const m = c.data.market!
+      return {
+        lltv: m.lltv,
+        collateralAddress: m.collateralAsset.address,
+        collateralSymbol: m.collateralAsset.symbol,
+        oracleAddress: m.oracle.address,
+        supplyAssetsUsd: m.state.supplyAssetsUsd,
+        realizedBadDebtUsd: m.realizedBadDebt.usd,
+        hasOracleWarning: m.warnings.some(w => w.type === 'incorrect_oracle_configuration'),
+      }
+    })
+
+  // APY history from daily avgNetApy points (V2 only has this one series)
+  const rawHistory = vault.historicalState.avgNetApy
+    .filter(p => p.y !== null)
+    .map(p => ({ timestamp: p.x * 1000, apyPct: (p.y as number) * 100 }))
+    .sort((a, b) => a.timestamp - b.timestamp)
+
+  // Derive rolling averages from history
+  const now = Date.now()
+  const avgOver = (days: number) => {
+    const cutoff = now - days * 86400 * 1000
+    const pts = rawHistory.filter(p => p.timestamp >= cutoff)
+    if (pts.length === 0) return null
+    return pts.reduce((s, p) => s + p.apyPct, 0) / pts.length
+  }
+
+  return {
+    name: vault.name,
+    tvlUsd: vault.totalAssetsUsd,
+    currentApyPct: vault.netApy * 100,
+    apy7dAvg: avgOver(7),
+    apy30dAvg: avgOver(30),
+    apy90dAvg: avgOver(90),
+    apyHistory: rawHistory,
+    curatorAddress: vault.owner.address,
+    curatorName: primaryCurator?.name ?? null,
+    curatorVerified: primaryCurator?.verified ?? false,
+    addAdapterTimelockSeconds,
+    vaultsManaged,
+    warnings: vault.warnings.map(w => w.type),
+    markets,
+    hasAdapterCaps,
+  }
+}
 
 async function gql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
   const res = await fetch(MORPHO_API, {

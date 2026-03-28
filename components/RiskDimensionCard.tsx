@@ -62,9 +62,9 @@ export function RiskDimensionCard({ dimensionScore, weightPct, placeholderFields
             </div>
             {/* Right: value + score */}
             <div className="text-right ml-4 max-w-[55%]">
-              {ind.value?.includes(' · ') ? (
+              {typeof ind.value === 'string' && ind.value.includes(' · ') ? (
                 <div className="flex flex-wrap gap-1 justify-end">
-                  {ind.value.split(' · ').map(token => (
+                  {ind.value.split(' · ').map((token: string) => (
                     <span key={token} className="inline-block text-xs bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded">
                       {token}
                     </span>
