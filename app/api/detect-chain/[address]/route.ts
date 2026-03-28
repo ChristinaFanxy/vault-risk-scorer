@@ -10,6 +10,9 @@ const DETECT_QUERY = `
     vaults(where: { address_in: $addresses }) {
       items { address chain { id } }
     }
+    vaultV2s(where: { address_in: $addresses }) {
+      items { address chain { id } }
+    }
   }
 `
 
@@ -34,17 +37,28 @@ export async function GET(
     const json = await res.json()
     if (json.errors?.length) throw new Error(json.errors[0].message)
 
-    const items: Array<{ address: string; chain: { id: number } }> = json.data.vaults.items
-    const supported = items.filter(v => SUPPORTED_CHAINS.includes(v.chain.id))
+    // Check V1 vaults
+    const v1Items: Array<{ address: string; chain: { id: number } }> = json.data.vaults.items
+    const v1Supported = v1Items.filter(v => SUPPORTED_CHAINS.includes(v.chain.id))
 
-    if (supported.length === 0) {
+    // Check V2 vaults
+    const v2Items: Array<{ address: string; chain: { id: number } }> = json.data.vaultV2s.items
+    const v2Supported = v2Items.filter(v => SUPPORTED_CHAINS.includes(v.chain.id))
+
+    // Combine results (V1 first, then V2)
+    const allChainIds = [
+      ...v1Supported.map(v => v.chain.id),
+      ...v2Supported.map(v => v.chain.id),
+    ]
+    const uniqueChainIds = [...new Set(allChainIds)]
+
+    if (uniqueChainIds.length === 0) {
       return NextResponse.json({ error: 'Vault not found on supported chains (Ethereum, Base)' }, { status: 404 })
     }
 
-    // Return all matching chains (usually just one)
     return NextResponse.json({
-      chains: supported.map(v => v.chain.id),
-      chainId: supported[0].chain.id,
+      chains: uniqueChainIds,
+      chainId: uniqueChainIds[0],
     })
   } catch (err) {
     return NextResponse.json(
