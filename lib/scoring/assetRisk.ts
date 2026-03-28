@@ -15,9 +15,13 @@ const ORACLE_SCORE: Record<OracleType, number> = {
 
 export function scoreAssetRisk(vault: VaultData): DimensionScore {
   if (vault.assets.length === 0) {
+    const isAdapterVault = vault.placeholderFields.includes('adapterCapsOpaque')
+    const note = isAdapterVault
+      ? 'This vault routes funds through opaque adapter strategies — collateral type is not publicly disclosed by the protocol'
+      : 'On-chain asset data unavailable'
     return {
       score: 50,
-      indicators: [{ name: 'Asset data', value: 'N/A', contribution: 50, note: 'On-chain asset data unavailable' }],
+      indicators: [{ name: 'Asset data', value: 'N/A', contribution: 50, note }],
     }
   }
 
