@@ -154,15 +154,20 @@ async function detectOracleType(
   return 'custom'
 }
 
+type MarketAssetsResult = {
+  assets: VaultData['assets']
+  oracleManipulationSurface: VaultData['oracleManipulationSurface']
+}
+
 async function fetchMarketAssets(
   vaultAddress: Address,
   chainId: ChainId,
   client: ReturnType<typeof getClient>
-): Promise<VaultData['assets']> {
+): Promise<MarketAssetsResult> {
   const queueLength = await withRetry(() =>
     client.readContract({ address: vaultAddress, abi: METAMORPHO_ABI, functionName: 'withdrawQueueLength' })
   )
-  if (queueLength === BigInt(0)) return []
+  if (queueLength === BigInt(0)) return { assets: [], oracleManipulationSurface: 'low' }
 
   const count = Math.min(Number(queueLength), 15)
 
@@ -234,7 +239,14 @@ async function fetchMarketAssets(
     )),
   ])
 
-  return deduped.map(({ params, supplyAssets }, i) => {
+  // Derive oracle manipulation surface from the worst oracle type present
+  const uniqueOracleTypes = new Set(oracleTypes as OracleType[])
+  const oracleManipulationSurface: VaultData['oracleManipulationSurface'] =
+    uniqueOracleTypes.has('custom') ? 'high'
+    : uniqueOracleTypes.has('uniswap-twap') ? 'medium'
+    : 'low'
+
+  const assets = deduped.map(({ params, supplyAssets }, i) => {
     const addr = params.collateralToken.toLowerCase()
     const info = TOKEN_REGISTRY[addr]
     const symbol = symbols[i] as string
@@ -245,12 +257,14 @@ async function fetchMarketAssets(
       address: params.collateralToken,
       symbol,
       assetClass,
-      oracleType: oracleTypes[i],
+      oracleType: oracleTypes[i] as OracleType,
       liquidityDepthUsd: info?.liquidityDepthUsd ?? defaultLiquidity(assetClass),
       volatility30d: info?.volatility30d ?? defaultVolatility(assetClass),
       vaultWeightPct: weight,
     }
   })
+
+  return { assets, oracleManipulationSurface }
 }
 
 /**
@@ -268,16 +282,21 @@ export async function fetchMorphoVaultData(
 
   const isDefillamaId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(defillamaPoolId)
 
-  const [name, yieldResult, badDebt, assets, curatorData] = await Promise.all([
+  const [name, yieldResult, badDebt, marketResult, curatorData] = await Promise.all([
     withRetry(() => client.readContract({ address: checksumAddress, abi: METAMORPHO_ABI, functionName: 'name' })),
     isDefillamaId
       ? fetchVaultYield(defillamaPoolId).catch(() => fetchMorphoYieldData(address, chainId))
       : fetchMorphoYieldData(address, chainId),
     fetchMorphoBadDebt(address, chainId),
-    fetchMarketAssets(checksumAddress, chainId, client).catch(() => []),
+    fetchMarketAssets(checksumAddress, chainId, client).catch(() => ({ assets: [], oracleManipulationSurface: 'low' as const })),
     fetchMorphoCuratorData(address, chainId).catch(() => null),
   ])
   const yield_ = yieldResult
+  const { assets } = marketResult
+  // Prefer Morpho API oracle warning over on-chain detection (which misclassifies MorphoChainlinkOracleV2)
+  const oracleManipulationSurface: VaultData['oracleManipulationSurface'] = curatorData?.hasOracleWarning
+    ? 'high'
+    : marketResult.oracleManipulationSurface
 
   // Derive curator type from Morpho's verification status
   const curatorType: CuratorType = curatorData?.curatorVerified ? 'institution'
@@ -296,14 +315,19 @@ export async function fetchMorphoVaultData(
     ? (curatorData.guardian === ZERO ? 'broad' : 'narrow')
     : 'medium'
 
+  // Liquidation threshold = weighted avg LLTV; maxLtv = threshold - 5% (practical safe buffer)
+  const liquidationThresholdPct = curatorData?.weightedAvgLltvPct ?? 85
+  const maxLtvPct = Math.max(liquidationThresholdPct - 5, 0)
+
+  // Use Morpho API bad debt as primary; fall back to The Graph value
+  const morphoBadDebt = curatorData?.totalRealizedBadDebtUsd ?? -1
+  const historicalBadDebtUsd = morphoBadDebt >= 0 ? morphoBadDebt : badDebt
+
   const placeholderFields: string[] = [
-    'maxLtvPct',
-    'liquidationThresholdPct',
     'liquidationBonusPct',
     'liquidationMechanism',
-    'oracleManipulationSurface',
     ...(assets.length === 0 ? ['assets'] : []),
-    ...(curatorData === null ? ['curatorType', 'vaultsManaged', 'permissionScope', 'incidentCount', 'curatorBorrowsFromVault'] : []),
+    ...(curatorData === null ? ['curatorType', 'vaultsManaged', 'permissionScope', 'incidentCount', 'curatorBorrowsFromVault', 'maxLtvPct', 'liquidationThresholdPct', 'oracleManipulationSurface'] : []),
   ]
 
   return {
@@ -318,12 +342,12 @@ export async function fetchMorphoVaultData(
     apy90dAvg: yield_.apy90dAvg,
     apyHistory: yield_.apyHistory,
     assets,
-    maxLtvPct: 80,
-    liquidationThresholdPct: 85,
+    maxLtvPct,
+    liquidationThresholdPct,
     liquidationBonusPct: 5,
     liquidationMechanism: 'dutch-auction',
-    historicalBadDebtUsd: badDebt,
-    oracleManipulationSurface: 'low',
+    historicalBadDebtUsd,
+    oracleManipulationSurface,
     curatorAddress: curatorData?.curatorAddress ?? address,
     curatorName: curatorData?.curatorName ?? null,
     curatorType,

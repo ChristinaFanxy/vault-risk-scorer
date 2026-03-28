@@ -13,7 +13,7 @@ export function scoreLiquidationRisk(vault: VaultData): DimensionScore {
   indicators.push({
     name: 'Safety buffer',
     desc: 'Gap between max borrow limit and liquidation trigger. Wider = more time to react before positions are closed.',
-    value: `${buffer}% cushion (borrow up to ${vault.maxLtvPct}%, liquidated at ${vault.liquidationThresholdPct}%)`,
+    value: `${buffer.toFixed(1)}% cushion (borrow up to ${vault.maxLtvPct.toFixed(1)}%, liquidated at ${vault.liquidationThresholdPct.toFixed(1)}%)`,
     contribution: ltvScore,
     status: ltvStatus,
     note: buffer < 5 ? 'Very thin buffer — liquidators may not have enough time to act in volatile markets' : undefined,

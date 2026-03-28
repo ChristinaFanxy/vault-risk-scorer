@@ -22,6 +22,9 @@ export interface MorphoCuratorData {
   owner: string                     // vault owner address
   incidentCount: number             // markets with realizedBadDebt > $1
   curatorBorrowsFromVault: boolean  // curator has open borrow position in vault markets
+  weightedAvgLltvPct: number        // supply-weighted avg LLTV across non-idle markets
+  totalRealizedBadDebtUsd: number   // sum of realizedBadDebt across all vault markets
+  hasOracleWarning: boolean         // any market has incorrect_oracle_configuration
 }
 
 const VAULT_YIELD_QUERY = `
@@ -53,7 +56,10 @@ const VAULT_CURATOR_QUERY = `
         allocation {
           market {
             uniqueKey
+            lltv
             realizedBadDebt { usd }
+            state { supplyAssetsUsd }
+            warnings { type }
           }
         }
       }
@@ -140,7 +146,15 @@ export async function fetchMorphoCuratorData(
   vaultAddress: string,
   chainId: number
 ): Promise<MorphoCuratorData> {
-  type Allocation = { market: { uniqueKey: string; realizedBadDebt: { usd: number } } }
+  type Allocation = {
+    market: {
+      uniqueKey: string
+      lltv: string                       // uint256 as string, 1e18 = 100%
+      realizedBadDebt: { usd: number }
+      state: { supplyAssetsUsd: number }
+      warnings: Array<{ type: string }>
+    }
+  }
 
   // Step 1: fetch vault curator info + guardian/owner + market bad debt
   const { vault } = await gql<{
@@ -165,6 +179,29 @@ export async function fetchMorphoCuratorData(
   const incidentCount = vault.state.allocation.filter(
     a => a.market.realizedBadDebt.usd > BAD_DEBT_THRESHOLD_USD
   ).length
+
+  // Total bad debt across all markets
+  const totalRealizedBadDebtUsd = vault.state.allocation.reduce(
+    (sum, a) => sum + a.market.realizedBadDebt.usd, 0
+  )
+
+  // Oracle warning: any market has incorrect oracle configuration
+  const hasOracleWarning = vault.state.allocation.some(
+    a => a.market.warnings.some(w => w.type === 'incorrect_oracle_configuration')
+  )
+
+  // Weighted avg LLTV (exclude idle markets where lltv = 0)
+  const activeMarkets = vault.state.allocation.filter(a => a.market.lltv !== '0')
+  const totalSupply = activeMarkets.reduce((s, a) => s + a.market.state.supplyAssetsUsd, 0)
+  const weightedAvgLltvPct = totalSupply > 0
+    ? activeMarkets.reduce((s, a) => {
+        const lltv = Number(a.market.lltv) / 1e18 * 100
+        const weight = a.market.state.supplyAssetsUsd / totalSupply
+        return s + lltv * weight
+      }, 0)
+    : (activeMarkets.length > 0
+        ? activeMarkets.reduce((s, a) => s + Number(a.market.lltv) / 1e18 * 100, 0) / activeMarkets.length
+        : 80)
 
   // Steps 2+3 in parallel: count vaults managed + check curator borrow positions
   const [vaultsManaged, curatorBorrowsFromVault] = await Promise.all([
@@ -192,5 +229,8 @@ export async function fetchMorphoCuratorData(
     owner: vault.state.owner,
     incidentCount,
     curatorBorrowsFromVault,
+    weightedAvgLltvPct,
+    totalRealizedBadDebtUsd,
+    hasOracleWarning,
   }
 }
