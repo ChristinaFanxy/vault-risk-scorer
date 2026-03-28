@@ -84,11 +84,11 @@ const VAULT_CURATOR_QUERY = `
         owner
         curators { name verified }
         allocation {
+          supplyAssetsUsd
           market {
             uniqueKey
             lltv
             realizedBadDebt { usd }
-            state { supplyAssetsUsd }
             warnings { type }
           }
         }
@@ -129,7 +129,6 @@ const VAULT_V2_QUERY = `
             market {
               lltv
               realizedBadDebt { usd }
-              state { supplyAssetsUsd }
               warnings { type }
               collateralAsset { address symbol }
               oracle { address }
@@ -154,10 +153,10 @@ const METAMORPHO_MARKETS_QUERY = `
     vault: vaultByAddress(address: $address, chainId: $chainId) {
       state {
         allocation {
+          supplyAssetsUsd
           market {
             lltv
             realizedBadDebt { usd }
-            state { supplyAssetsUsd }
             warnings { type }
             collateralAsset { address symbol }
             oracle { address }
@@ -186,13 +185,13 @@ export async function fetchMorphoV2Data(
   type MarketData = {
     lltv: string
     realizedBadDebt: { usd: number }
-    state: { supplyAssetsUsd: number }
     warnings: Array<{ type: string }>
     collateralAsset: { address: string; symbol: string }
     oracle: { address: string }
   }
   type Cap = {
     type: string
+    allocation: string   // raw token amount (BigInt as string)
     data: {
       market?: MarketData
       adapter?: { metaMorpho?: { address: string } }
@@ -230,20 +229,25 @@ export async function fetchMorphoV2Data(
   ).then(r => Math.max(1, r.vaultV2s.items.length)).catch(() => 1)
 
   // Helper to convert a market object to our standard shape
-  const toMarket = (m: MarketData) => ({
+  // supplyAssetsUsd = this vault's allocation to this market (not the market's total)
+  const toMarket = (m: MarketData, supplyAssetsUsd: number) => ({
     lltv: m.lltv,
     collateralAddress: m.collateralAsset.address,
     collateralSymbol: m.collateralAsset.symbol,
     oracleAddress: m.oracle.address,
-    supplyAssetsUsd: m.state.supplyAssetsUsd,
+    supplyAssetsUsd,
     realizedBadDebtUsd: m.realizedBadDebt.usd,
     hasOracleWarning: m.warnings.some(w => w.type === 'incorrect_oracle_configuration'),
   })
 
   // Parse caps: MarketV1 direct, MetaMorpho adapter (resolve via follow-up query), other Adapter (opaque)
-  const marketV1Markets = vault.caps.items
-    .filter(c => c.type === 'MarketV1' && c.data.market)
-    .map(c => toMarket(c.data.market!))
+  // For MarketV1 caps: use cap's raw allocation proportional to vault TVL for USD amount
+  const v1Caps = vault.caps.items.filter(c => c.type === 'MarketV1' && c.data.market)
+  const totalV1RawAlloc = v1Caps.reduce((s, c) => s + Number(c.allocation), 0)
+  const marketV1Markets = v1Caps.map(c => {
+    const weight = totalV1RawAlloc > 0 ? Number(c.allocation) / totalV1RawAlloc : 0
+    return toMarket(c.data.market!, weight * vault.totalAssetsUsd)
+  })
 
   // MetaMorpho adapter caps — fetch their underlying markets
   const metaMorphoAddresses = vault.caps.items
@@ -256,12 +260,16 @@ export async function fetchMorphoV2Data(
         vault: {
           state: {
             allocation: Array<{
+              supplyAssetsUsd: number | null
               market: MarketData & { collateralAsset: { address: string; symbol: string }; oracle: { address: string } }
             }>
           }
         }
       }>(METAMORPHO_MARKETS_QUERY, { address: addr, chainId })
-        .then(r => r.vault.state.allocation.map(a => toMarket(a.market)))
+        .then(r => r.vault.state.allocation
+          .filter(a => (a.supplyAssetsUsd ?? 0) > 0)
+          .map(a => toMarket(a.market, a.supplyAssetsUsd ?? 0))
+        )
         .catch(() => [] as ReturnType<typeof toMarket>[])
     )
   )).flat()
@@ -370,11 +378,11 @@ export async function fetchMorphoCuratorData(
   chainId: number
 ): Promise<MorphoCuratorData> {
   type Allocation = {
+    supplyAssetsUsd: number | null       // this vault's allocation to this market
     market: {
       uniqueKey: string
       lltv: string                       // uint256 as string, 1e18 = 100%
       realizedBadDebt: { usd: number }
-      state: { supplyAssetsUsd: number }
       warnings: Array<{ type: string }>
     }
   }
@@ -415,11 +423,11 @@ export async function fetchMorphoCuratorData(
 
   // Weighted avg LLTV (exclude idle markets where lltv = 0)
   const activeMarkets = vault.state.allocation.filter(a => a.market.lltv !== '0')
-  const totalSupply = activeMarkets.reduce((s, a) => s + a.market.state.supplyAssetsUsd, 0)
+  const totalSupply = activeMarkets.reduce((s, a) => s + (a.supplyAssetsUsd ?? 0), 0)
   const weightedAvgLltvPct = totalSupply > 0
     ? activeMarkets.reduce((s, a) => {
         const lltv = Number(a.market.lltv) / 1e18 * 100
-        const weight = a.market.state.supplyAssetsUsd / totalSupply
+        const weight = (a.supplyAssetsUsd ?? 0) / totalSupply
         return s + lltv * weight
       }, 0)
     : (activeMarkets.length > 0
