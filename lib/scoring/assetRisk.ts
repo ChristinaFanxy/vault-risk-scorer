@@ -97,12 +97,17 @@ export function scoreAssetRisk(vault: VaultData): DimensionScore {
   const concentrated = activeAssets.length > 1 && maxWeight > 50
   const concScore = concentrated ? 10 : 0
   score += concScore
+  const concValue = activeAssets.length <= 1
+    ? `Single asset — ${dominant.symbol}`
+    : concentrated ? `${maxWeight.toFixed(1)}% in ${dominant.symbol}` : 'Diversified'
+  const concStatus = activeAssets.length <= 1 ? 'ok'
+    : concentrated ? 'caution' : 'good'
   indicators.push({
     name: 'Concentration',
     desc: 'Whether one asset dominates the vault. Concentration means less diversification — one bad asset affects the whole pool.',
-    value: concentrated ? `${maxWeight.toFixed(1)}% in ${dominant.symbol}` : 'Diversified',
+    value: concValue,
     contribution: concScore,
-    status: concentrated ? 'caution' : 'good',
+    status: concStatus,
     note: concentrated ? 'Single asset >50% of multi-asset vault' : undefined,
   })
 
