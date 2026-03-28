@@ -61,8 +61,18 @@ export function RiskDimensionCard({ dimensionScore, weightPct, placeholderFields
               )}
             </div>
             {/* Right: value + score */}
-            <div className="text-right shrink-0 ml-4">
-              <div className="text-sm text-gray-300">{ind.value}</div>
+            <div className="text-right ml-4 max-w-[55%]">
+              {ind.value?.includes(' · ') ? (
+                <div className="flex flex-wrap gap-1 justify-end">
+                  {ind.value.split(' · ').map(token => (
+                    <span key={token} className="inline-block text-xs bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded">
+                      {token}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-gray-300">{ind.value}</div>
+              )}
               {ind.contribution > 0 && (
                 <div className="text-xs text-gray-600 mt-0.5">+{ind.contribution} risk pts</div>
               )}
