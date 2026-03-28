@@ -135,9 +135,35 @@ const VAULT_V2_QUERY = `
               oracle { address }
             }
           }
+          ... on AdapterCapData {
+            adapter {
+              ... on MetaMorphoAdapter {
+                metaMorpho { address }
+              }
+            }
+          }
         }
       }}
       historicalState { avgNetApy { x y } }
+    }
+  }
+`
+
+const METAMORPHO_MARKETS_QUERY = `
+  query MetaMorphoMarkets($address: String!, $chainId: Int!) {
+    vault: vaultByAddress(address: $address, chainId: $chainId) {
+      state {
+        allocation {
+          market {
+            lltv
+            realizedBadDebt { usd }
+            state { supplyAssetsUsd }
+            warnings { type }
+            collateralAsset { address symbol }
+            oracle { address }
+          }
+        }
+      }
     }
   }
 `
@@ -157,17 +183,19 @@ export async function fetchMorphoV2Data(
   vaultAddress: string,
   chainId: number
 ): Promise<MorphoV2Data> {
+  type MarketData = {
+    lltv: string
+    realizedBadDebt: { usd: number }
+    state: { supplyAssetsUsd: number }
+    warnings: Array<{ type: string }>
+    collateralAsset: { address: string; symbol: string }
+    oracle: { address: string }
+  }
   type Cap = {
     type: string
     data: {
-      market?: {
-        lltv: string
-        realizedBadDebt: { usd: number }
-        state: { supplyAssetsUsd: number }
-        warnings: Array<{ type: string }>
-        collateralAsset: { address: string; symbol: string }
-        oracle: { address: string }
-      }
+      market?: MarketData
+      adapter?: { metaMorpho?: { address: string } }
     }
   }
   type Point = { x: number; y: number | null }
@@ -201,22 +229,49 @@ export async function fetchMorphoV2Data(
     { curatorAddresses, chainIds: [1, 8453] }
   ).then(r => Math.max(1, r.vaultV2s.items.length)).catch(() => 1)
 
-  // Parse caps: separate MarketV1 (scoreable) from Adapter (opaque)
-  const hasAdapterCaps = vault.caps.items.some(c => c.type === 'Adapter')
-  const markets = vault.caps.items
+  // Helper to convert a market object to our standard shape
+  const toMarket = (m: MarketData) => ({
+    lltv: m.lltv,
+    collateralAddress: m.collateralAsset.address,
+    collateralSymbol: m.collateralAsset.symbol,
+    oracleAddress: m.oracle.address,
+    supplyAssetsUsd: m.state.supplyAssetsUsd,
+    realizedBadDebtUsd: m.realizedBadDebt.usd,
+    hasOracleWarning: m.warnings.some(w => w.type === 'incorrect_oracle_configuration'),
+  })
+
+  // Parse caps: MarketV1 direct, MetaMorpho adapter (resolve via follow-up query), other Adapter (opaque)
+  const marketV1Markets = vault.caps.items
     .filter(c => c.type === 'MarketV1' && c.data.market)
-    .map(c => {
-      const m = c.data.market!
-      return {
-        lltv: m.lltv,
-        collateralAddress: m.collateralAsset.address,
-        collateralSymbol: m.collateralAsset.symbol,
-        oracleAddress: m.oracle.address,
-        supplyAssetsUsd: m.state.supplyAssetsUsd,
-        realizedBadDebtUsd: m.realizedBadDebt.usd,
-        hasOracleWarning: m.warnings.some(w => w.type === 'incorrect_oracle_configuration'),
-      }
-    })
+    .map(c => toMarket(c.data.market!))
+
+  // MetaMorpho adapter caps — fetch their underlying markets
+  const metaMorphoAddresses = vault.caps.items
+    .filter(c => c.type === 'Adapter' && c.data.adapter?.metaMorpho?.address)
+    .map(c => c.data.adapter!.metaMorpho!.address)
+
+  const metaMorphoMarkets = (await Promise.all(
+    metaMorphoAddresses.map(addr =>
+      gql<{
+        vault: {
+          state: {
+            allocation: Array<{
+              market: MarketData & { collateralAsset: { address: string; symbol: string }; oracle: { address: string } }
+            }>
+          }
+        }
+      }>(METAMORPHO_MARKETS_QUERY, { address: addr, chainId })
+        .then(r => r.vault.state.allocation.map(a => toMarket(a.market)))
+        .catch(() => [] as ReturnType<typeof toMarket>[])
+    )
+  )).flat()
+
+  const markets = [...marketV1Markets, ...metaMorphoMarkets]
+
+  // hasAdapterCaps = true only if there are Adapter caps we couldn't resolve
+  const hasAdapterCaps = vault.caps.items.some(
+    c => c.type === 'Adapter' && !c.data.adapter?.metaMorpho?.address
+  )
 
   // APY history from daily avgNetApy points (V2 only has this one series)
   const rawHistory = vault.historicalState.avgNetApy
