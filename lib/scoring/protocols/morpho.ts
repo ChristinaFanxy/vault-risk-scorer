@@ -60,6 +60,10 @@ const ERC20_SYMBOL_ABI = [
   { name: 'symbol', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] },
 ] as const
 
+const ERC20_DECIMALS_ABI = [
+  { name: 'decimals', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint8' }] },
+] as const
+
 const ORACLE_PRICE_ABI = [
   { name: 'price', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
 ] as const
@@ -173,6 +177,86 @@ const CHAINLINK_ROUND_DATA_ABI_HISTORICAL = [
 
 const BLOCKS_PER_DAY = 7200   // ~12s per block on Ethereum
 const BLOCKS_PER_WEEK = BLOCKS_PER_DAY * 7
+
+/**
+ * Detect unrealized bad debt by reading on-chain market state for historical markets.
+ * Checks all historical markets for high utilization (>95%) with significant borrows.
+ * This catches cases where bad debt hasn't been formally "realized" by the protocol
+ * (e.g., Resolv USR incident where oracle was hardcoded and liquidations didn't fire).
+ * Subtracts already-counted realized bad debt to avoid double counting.
+ */
+async function detectUnrealizedBadDebt(
+  historicalMarketIds: Array<{ marketId: string; chainId: ChainId }>,
+  realizedBadDebtUsd: number,
+): Promise<number> {
+  if (historicalMarketIds.length === 0) return 0
+
+  const byChain = new Map<ChainId, string[]>()
+  for (const m of historicalMarketIds) {
+    const arr = byChain.get(m.chainId) ?? []
+    arr.push(m.marketId)
+    byChain.set(m.chainId, arr)
+  }
+
+  let totalUnrealizedUsd = 0
+
+  for (const [chainId, marketIds] of byChain) {
+    const client = getClient(chainId)
+    // Limit to 50 markets per chain to avoid timeout
+    const toCheck = marketIds.slice(0, 50)
+    const results = await Promise.allSettled(
+      toCheck.map(async (id) => {
+        const marketId = id as `0x${string}`
+        const [state, params] = await Promise.all([
+          client.readContract({
+            address: MORPHO_BLUE_ADDRESS,
+            abi: MORPHO_BLUE_ABI,
+            functionName: 'market',
+            args: [marketId],
+          }),
+          client.readContract({
+            address: MORPHO_BLUE_ADDRESS,
+            abi: MORPHO_BLUE_ABI,
+            functionName: 'idToMarketParams',
+            args: [marketId],
+          }),
+        ])
+        return { state, params }
+      })
+    )
+
+    for (const r of results) {
+      if (r.status !== 'fulfilled') continue
+      const { state, params } = r.value
+      const totalBorrowAssets = state.totalBorrowAssets
+      if (totalBorrowAssets <= BigInt(0)) continue
+
+      // Get loan token decimals
+      const loanToken = params.loanToken as Address
+      let decimals = 6 // default: USDC
+      try {
+        decimals = await withRetry(() =>
+          client.readContract({ address: loanToken, abi: ERC20_DECIMALS_ABI, functionName: 'decimals' })
+        )
+      } catch { /* use default */ }
+
+      const borrowUsd = Number(totalBorrowAssets) / (10 ** decimals)
+
+      // Only count if significant (> $1000) and near-100% utilization
+      // (supply ≈ borrow means no idle liquidity — funds are stuck)
+      const totalSupplyAssets = state.totalSupplyAssets
+      const utilization = totalSupplyAssets > BigInt(0)
+        ? Number(totalBorrowAssets) / Number(totalSupplyAssets)
+        : 0
+      if (borrowUsd > 1000 && utilization > 0.95) {
+        totalUnrealizedUsd += borrowUsd
+      }
+    }
+  }
+
+  // Subtract already-realized bad debt to avoid double counting
+  return Math.max(0, totalUnrealizedUsd - realizedBadDebtUsd)
+}
 
 /**
  * Detects hardcoded price feeds by checking if `latestRoundData().answer` is
@@ -496,9 +580,17 @@ async function fetchMorphoV2VaultData(
   const allCuratorAddresses = await fetchCuratorAllAddresses(v2.curatorAddress).catch(() => [v2.curatorAddress])
   const curatorHistory = await fetchCuratorBadDebtHistory(allCuratorAddresses).catch(() => null)
 
-  const historicalBadDebtUsd = curatorHistory && curatorHistory.totalBadDebtUsd > 0
+  // Realized bad debt from The Graph events or Morpho API
+  const realizedBadDebtUsd = curatorHistory && curatorHistory.totalBadDebtUsd > 0
     ? curatorHistory.totalBadDebtUsd
     : totalRealizedBadDebtUsd
+
+  // Detect unrealized bad debt: check historical markets on-chain for stuck borrows
+  const unrealizedBadDebtUsd = curatorHistory?.allMarketIds
+    ? await detectUnrealizedBadDebt(curatorHistory.allMarketIds, realizedBadDebtUsd).catch(() => 0)
+    : 0
+
+  const historicalBadDebtUsd = realizedBadDebtUsd + unrealizedBadDebtUsd
 
   const placeholderFields: string[] = [
     'liquidationBonusPct',
@@ -610,9 +702,15 @@ export async function fetchMorphoVaultData(
   const curatorHistory = await fetchCuratorBadDebtHistory(allCuratorAddresses).catch(() => null)
 
   // Priority: The Graph (immutable history) > Morpho API (current state) > legacy subgraph
-  const historicalBadDebtUsd = curatorHistory && curatorHistory.totalBadDebtUsd > 0
+  const realizedBadDebtUsd = curatorHistory && curatorHistory.totalBadDebtUsd > 0
     ? curatorHistory.totalBadDebtUsd
     : curatorData?.totalRealizedBadDebtUsd ?? badDebt
+
+  // Detect unrealized bad debt on-chain
+  const unrealizedBadDebtUsd = curatorHistory?.allMarketIds
+    ? await detectUnrealizedBadDebt(curatorHistory.allMarketIds, realizedBadDebtUsd).catch(() => 0)
+    : 0
+  const historicalBadDebtUsd = realizedBadDebtUsd + unrealizedBadDebtUsd
 
   const placeholderFields: string[] = [
     'liquidationBonusPct',

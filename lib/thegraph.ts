@@ -62,6 +62,8 @@ export interface CuratorBadDebtHistory {
   historicalVaultCount: number
   /** Individual bad debt events with market ID, amount, and chain */
   events: BadDebtEvent[]
+  /** All market IDs ever associated with this curator's vaults, per chain */
+  allMarketIds: Array<{ marketId: string; chainId: ChainId }>
 }
 
 async function subgraphQuery<T>(
@@ -171,9 +173,11 @@ export async function fetchCuratorBadDebtHistory(
   const allVaultIds = new Set<string>()
   const allAffectedMarkets = new Set<string>()
   const allEvents: BadDebtEvent[] = []
+  const allMarketIds: Array<{ marketId: string; chainId: ChainId }> = []
   let hasAnyData = false
 
-  for (const r of results) {
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i]
     if (!r) continue
     hasAnyData = true
     totalBadDebtUsd += r.totalBadDebtUsd
@@ -181,6 +185,8 @@ export async function fetchCuratorBadDebtHistory(
     for (const v of r.vaultIds) allVaultIds.add(v)
     for (const m of r.affectedMarkets) allAffectedMarkets.add(m)
     allEvents.push(...r.events)
+    const chainId = ALL_CHAINS[i]
+    for (const mid of r.marketIds) allMarketIds.push({ marketId: mid, chainId })
   }
 
   if (!hasAnyData) return null
@@ -194,6 +200,7 @@ export async function fetchCuratorBadDebtHistory(
     affectedMarketCount: allAffectedMarkets.size,
     historicalVaultCount: allVaultIds.size,
     events: allEvents,
+    allMarketIds,
   }
 }
 
