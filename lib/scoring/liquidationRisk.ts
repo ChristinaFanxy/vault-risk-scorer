@@ -87,7 +87,7 @@ export function scoreLiquidationRisk(vault: VaultData): DimensionScore {
   score += badDebtScore
   indicators.push({
     name: 'Past protocol losses',
-    desc: 'Has the protocol ever failed to recover lender funds after a liquidation? Bad debt means some depositors lost money.',
+    desc: 'Historical bad debt across all markets this curator has ever managed (on-chain data, immutable). Shared markets may attribute the same bad debt to multiple curators.',
     value: badDebtValue,
     contribution: badDebtScore,
     status: badDebtStatus,
