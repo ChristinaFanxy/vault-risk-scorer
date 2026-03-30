@@ -18,7 +18,7 @@ function scoreColor(score: number): string {
 function StatusBadge({ status }: { status: 'good' | 'ok' | 'caution' | 'bad' }) {
   const cfg = {
     good:    { label: 'Good',    cls: 'bg-green-900/50 text-green-400 border-green-800' },
-    ok:      { label: 'OK',      cls: 'bg-gray-800 text-gray-300 border-gray-700' },
+    ok:      { label: 'OK',      cls: 'bg-brand-card text-brand-cream border-brand-border' },
     caution: { label: 'Caution', cls: 'bg-yellow-900/40 text-yellow-400 border-yellow-800' },
     bad:     { label: 'Risk',    cls: 'bg-red-900/40 text-red-400 border-red-800' },
   }[status]
@@ -36,7 +36,7 @@ export function RiskDimensionCard({ dimensionScore, weightPct, placeholderFields
     <div>
       <div className="flex items-baseline gap-2 mb-4">
         <span className={`text-3xl font-bold ${scoreColor(score)}`}>{score}</span>
-        <span className="text-gray-400 text-sm">
+        <span className="text-brand-light text-sm">
           {weightPct > 0 ? `/100 · ${weightPct}% of composite · lower = safer` : 'Reference only — not included in score'}
         </span>
       </div>
@@ -47,23 +47,23 @@ export function RiskDimensionCard({ dimensionScore, weightPct, placeholderFields
         </p>
       )}
 
-      <div className="flex flex-col divide-y divide-gray-800">
+      <div className="flex flex-col divide-y divide-brand-border">
         {indicators.map(ind => (
           <div key={ind.name} className="py-3 flex gap-3 items-start">
             {/* Left: name + desc + note */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-medium text-gray-200">{ind.name}</span>
+                <span className="text-sm font-medium text-brand-cream">{ind.name}</span>
                 {ind.status && <StatusBadge status={ind.status} />}
               </div>
               {ind.desc && (
-                <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{ind.desc}</p>
+                <p className="text-xs text-brand-light mt-0.5 leading-relaxed">{ind.desc}</p>
               )}
               {ind.note && (
                 <p className="text-xs text-yellow-400 mt-1">⚠ {ind.note}</p>
               )}
               {ind.link && (
-                <Link href={ind.link} className="text-xs text-indigo-400 hover:text-indigo-300 mt-1 inline-block">
+                <Link href={ind.link} className="text-xs text-brand hover:text-brand-cream mt-1 inline-block">
                   View details →
                 </Link>
               )}
@@ -73,16 +73,16 @@ export function RiskDimensionCard({ dimensionScore, weightPct, placeholderFields
               {typeof ind.value === 'string' && ind.value.includes(' · ') ? (
                 <div className="flex flex-wrap gap-1 justify-end">
                   {ind.value.split(' · ').map((token: string) => (
-                    <span key={token} className="inline-block text-xs bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded">
+                    <span key={token} className="inline-block text-xs bg-brand-card text-brand-cream px-1.5 py-0.5 rounded">
                       {token}
                     </span>
                   ))}
                 </div>
               ) : (
-                <div className="text-sm text-gray-300">{ind.value}</div>
+                <div className="text-sm text-brand-cream">{ind.value}</div>
               )}
               {ind.contribution > 0 && (
-                <div className="text-xs text-gray-600 mt-0.5">+{ind.contribution} risk pts</div>
+                <div className="text-xs text-brand-light/60 mt-0.5">+{ind.contribution} risk pts</div>
               )}
             </div>
           </div>

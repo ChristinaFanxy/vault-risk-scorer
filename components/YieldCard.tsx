@@ -12,29 +12,29 @@ export function YieldCard({
   return (
     <div className="flex gap-6 text-sm">
       <div>
-        <p className="text-gray-500">Current APY</p>
-        <p className="text-white text-xl font-bold">{currentApyPct.toFixed(2)}%</p>
+        <p className="text-brand-light">Current APY</p>
+        <p className="text-brand-cream text-xl font-bold">{currentApyPct.toFixed(2)}%</p>
       </div>
       {apy7dAvg != null && (
         <div>
-          <p className="text-gray-500">7-day avg</p>
-          <p className="text-gray-300">{apy7dAvg.toFixed(2)}%</p>
+          <p className="text-brand-light">7-day avg</p>
+          <p className="text-brand-cream">{apy7dAvg.toFixed(2)}%</p>
         </div>
       )}
       {apy30dAvg != null && (
         <div>
-          <p className="text-gray-500">30-day avg</p>
-          <p className="text-gray-300">{apy30dAvg.toFixed(2)}%</p>
+          <p className="text-brand-light">30-day avg</p>
+          <p className="text-brand-cream">{apy30dAvg.toFixed(2)}%</p>
         </div>
       )}
       {apy90dAvg != null && (
         <div>
-          <p className="text-gray-500">90-day avg</p>
-          <p className="text-gray-300">{apy90dAvg.toFixed(2)}%</p>
+          <p className="text-brand-light">90-day avg</p>
+          <p className="text-brand-cream">{apy90dAvg.toFixed(2)}%</p>
         </div>
       )}
       <div>
-        <p className="text-gray-500">Stability</p>
+        <p className="text-brand-light">Stability</p>
         <p className={apyStabilityLabel === 'Stable' ? 'text-green-400' : 'text-yellow-400'}>
           {apyStabilityLabel}
         </p>

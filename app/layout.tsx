@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { LanguageProvider } from "@/lib/i18n";
 
 export const metadata: Metadata = {
-  title: "DeFi Vault Risk Scorer",
-  description: "Score and compare DeFi vault risk",
+  title: "Morpho Vault Risk Scorer",
+  description: "Assess Morpho vault risk before you deposit",
 };
 
 export default function RootLayout({
@@ -13,7 +14,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="h-full antialiased">
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col bg-brand-bg text-brand-cream">
+        <LanguageProvider>{children}</LanguageProvider>
+      </body>
     </html>
   );
 }

@@ -1,12 +1,14 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useLanguage } from '@/lib/i18n'
 
 export function SearchBar() {
   const [address, setAddress] = useState('')
   const [status, setStatus] = useState<'idle' | 'detecting' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const router = useRouter()
+  const { t } = useLanguage()
 
   function extractAddress(input: string): string | null {
     // Pure address: 0x followed by 40 hex chars
@@ -23,7 +25,7 @@ export function SearchBar() {
     const vaultAddress = extractAddress(trimmed)
     if (!vaultAddress) {
       setStatus('error')
-      setErrorMsg('Could not find a vault address — paste a 0x address or a Morpho vault URL')
+      setErrorMsg(t.notFound)
       return
     }
 
@@ -36,14 +38,14 @@ export function SearchBar() {
 
       if (!res.ok || !data.chainId) {
         setStatus('error')
-        setErrorMsg(data.error ?? 'Vault not found on Ethereum or Base')
+        setErrorMsg(data.error ?? t.searchError)
         return
       }
 
       router.push(`/vault/${data.chainId}/${vaultAddress}`)
     } catch {
       setStatus('error')
-      setErrorMsg('Network error — please try again')
+      setErrorMsg(t.networkError)
     } finally {
       setStatus(s => s === 'detecting' ? 'idle' : s)
     }
@@ -56,15 +58,15 @@ export function SearchBar() {
           type="text"
           value={address}
           onChange={e => { setAddress(e.target.value); setStatus('idle'); setErrorMsg('') }}
-          placeholder="Paste vault address or Morpho URL"
-          className="flex-1 bg-gray-800 border border-gray-600 text-white px-4 py-3 rounded-lg placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+          placeholder={t.searchPlaceholder}
+          className="flex-1 bg-brand-card border border-brand-border text-brand-cream px-4 py-3 rounded-lg placeholder-brand-light/50 focus:outline-none focus:border-brand"
         />
         <button
           type="submit"
           disabled={status === 'detecting'}
-          className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-medium transition-colors min-w-[100px]"
+          className="bg-brand hover:bg-brand-light disabled:bg-brand/50 disabled:cursor-not-allowed text-brand-cream px-6 py-3 rounded-lg font-medium transition-colors min-w-[100px]"
         >
-          {status === 'detecting' ? 'Detecting…' : 'Analyze'}
+          {status === 'detecting' ? t.detecting : t.analyze}
         </button>
       </form>
       {status === 'error' && (

@@ -38,15 +38,15 @@ async function VaultContent({ chainId, address }: { chainId: string; address: st
 
   if (fetchError || !score) {
     return (
-      <main className="min-h-screen bg-gray-950 text-white p-8 flex items-center justify-center">
+      <main className="min-h-screen bg-brand-bg text-brand-cream p-8 flex items-center justify-center">
         <div className="max-w-md text-center">
           <div className="text-4xl mb-4">⚠️</div>
           <h1 className="text-xl font-bold mb-2">Unable to load vault data</h1>
-          <p className="text-gray-400 text-sm mb-4">
+          <p className="text-brand-light text-sm mb-4">
             This could be a temporary network issue or the vault may not be supported yet.
           </p>
-          <p className="text-gray-600 text-xs font-mono break-all mb-6">{address}</p>
-          <a href="/" className="text-indigo-400 hover:text-indigo-300 text-sm">← Back to search</a>
+          <p className="text-brand-light/60 text-xs font-mono break-all mb-6">{address}</p>
+          <a href="/" className="text-brand hover:text-brand-cream text-sm">← Back to search</a>
         </div>
       </main>
     )
@@ -62,17 +62,17 @@ async function VaultContent({ chainId, address }: { chainId: string; address: st
       <div className="flex items-start justify-between mb-8 gap-4 flex-wrap">
         <div>
           <div className="flex gap-2 mb-2">
-            <span className="bg-indigo-900 text-indigo-300 text-xs px-2 py-1 rounded">Morpho</span>
-            <span className="bg-gray-800 text-gray-300 text-xs px-2 py-1 rounded">
+            <span className="bg-indigo-900 text-brand-cream text-xs px-2 py-1 rounded">Morpho</span>
+            <span className="bg-brand-card text-brand-cream text-xs px-2 py-1 rounded">
               {CHAIN_NAMES[cid] ?? `Chain ${cid}`}
             </span>
           </div>
-          <h1 className="text-xl font-bold text-white break-all">{score.name || address}</h1>
-          <p className="text-gray-400 text-sm mt-1 font-mono">{address}</p>
+          <h1 className="text-xl font-bold text-brand-cream break-all">{score.name || address}</h1>
+          <p className="text-brand-light text-sm mt-1 font-mono">{address}</p>
           <div className="flex gap-4 mt-2 text-sm">
-            <span className="text-gray-400">TVL: <span className="text-white font-medium">{tvlFormatted}</span></span>
-            <span className="text-gray-400">
-              APY: <span className="text-white font-medium">{score.currentApyPct.toFixed(2)}%</span>
+            <span className="text-brand-light">TVL: <span className="text-brand-cream font-medium">{tvlFormatted}</span></span>
+            <span className="text-brand-light">
+              APY: <span className="text-brand-cream font-medium">{score.currentApyPct.toFixed(2)}%</span>
               {' · '}
               <span className={score.apyStabilityLabel === 'Stable' ? 'text-green-400' : 'text-yellow-400'}>
                 {score.apyStabilityLabel}
@@ -140,7 +140,7 @@ async function VaultContent({ chainId, address }: { chainId: string; address: st
       </div>
 
       {/* Footer */}
-      <div className="mt-8 text-xs text-gray-600 border-t border-gray-800 pt-4">
+      <div className="mt-8 text-xs text-brand-light/60 border-t border-brand-border pt-4">
         <p>Data sources: DefiLlama API · The Graph Morpho subgraph · Alchemy RPC</p>
         <p>Last updated: {new Date(score.dataFreshnessMs).toLocaleString()}</p>
         <p className="mt-2">For informational purposes only. Not investment advice.</p>
@@ -151,7 +151,7 @@ async function VaultContent({ chainId, address }: { chainId: string; address: st
 
 export default function VaultPage({ params }: { params: { chainId: string; address: string } }) {
   return (
-    <main className="min-h-screen bg-gray-950 text-white p-8">
+    <main className="min-h-screen bg-brand-bg text-brand-cream p-8">
       <Suspense fallback={
         <div className="max-w-3xl mx-auto flex flex-col gap-4">
           <SkeletonCard rows={2} />

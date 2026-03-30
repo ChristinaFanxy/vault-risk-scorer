@@ -7,7 +7,19 @@ const config: Config = {
     './lib/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        brand: {
+          DEFAULT: '#A98B76',
+          light: '#BFA28C',
+          cream: '#F3E4C9',
+          olive: '#BABF94',
+          bg: '#1a1610',
+          card: '#2a231c',
+          border: '#3d3229',
+        },
+      },
+    },
   },
   plugins: [],
 }
