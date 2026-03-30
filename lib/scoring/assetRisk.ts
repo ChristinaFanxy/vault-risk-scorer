@@ -1,12 +1,6 @@
 // lib/scoring/assetRisk.ts
 import type { VaultData, DimensionScore, AssetClass, OracleType } from './types'
 
-const ASSET_CLASS_SCORE: Record<AssetClass, number> = {
-  stablecoin: 5,
-  'blue-chip': 20,
-  'long-tail': 45,
-}
-
 const ORACLE_SCORE: Record<OracleType, number> = {
   chainlink: 0,
   'uniswap-twap': 5,
@@ -28,28 +22,33 @@ export function scoreAssetRisk(vault: VaultData): DimensionScore {
   const indicators: DimensionScore['indicators'] = []
   let score = 0
 
-  // 1. Collateral type — all real assets (exclude idle markets shown as UNKNOWN)
+  // 1. Collateral risk — merged asset class + price volatility (max 40)
   const activeAssets = vault.assets
     .filter(a => a.symbol !== 'UNKNOWN')
     .sort((a, b) => b.vaultWeightPct - a.vaultWeightPct)
   const dominant = activeAssets.length > 0
     ? activeAssets[0]
     : vault.assets.reduce((a, b) => a.vaultWeightPct >= b.vaultWeightPct ? a : b)
-  const assetTypeScore = ASSET_CLASS_SCORE[dominant.assetClass]
-  score += assetTypeScore
-  const assetLabel = dominant.assetClass === 'stablecoin' ? 'Stablecoin (low volatility)'
+  const weightedVol = activeAssets.reduce((s, a) => s + a.volatility30d * (a.vaultWeightPct / 100), 0)
+  const collateralScore = dominant.assetClass === 'stablecoin'
+    ? (weightedVol >= 0.01 ? 10 : 0)
+    : dominant.assetClass === 'blue-chip'
+      ? (weightedVol >= 0.15 ? 25 : weightedVol >= 0.05 ? 15 : 10)
+      : (weightedVol >= 0.30 ? 40 : weightedVol >= 0.15 ? 35 : 25)
+  score += collateralScore
+  const assetLabel = dominant.assetClass === 'stablecoin' ? 'Stablecoin'
     : dominant.assetClass === 'blue-chip' ? 'Blue-chip (ETH/BTC class)'
-    : 'Long-tail token (high risk)'
-  const assetListValue = activeAssets.length <= 1
-    ? `${dominant.symbol} — ${assetLabel}`
-    : activeAssets.map(a => `${a.symbol} (${a.vaultWeightPct.toFixed(1)}%)`).join(' · ')
+    : 'Long-tail token'
+  const volPct = (weightedVol * 100).toFixed(1)
+  const collateralValue = activeAssets.length <= 1
+    ? `${dominant.symbol} — ${assetLabel} · ${volPct}% 30d vol`
+    : activeAssets.map(a => `${a.symbol} (${a.vaultWeightPct.toFixed(1)}%)`).join(' · ') + ` · ${volPct}% 30d vol`
   indicators.push({
-    name: 'Collateral type',
-    desc: 'What borrowers put up as collateral. Stablecoins are safest; unknown tokens can lose value rapidly.',
-    value: assetListValue,
-    contribution: assetTypeScore,
-    status: dominant.assetClass === 'stablecoin' ? 'good'
-      : dominant.assetClass === 'blue-chip' ? 'ok' : 'bad',
+    name: 'Collateral risk',
+    desc: 'Collateral type and price volatility combined. Stablecoins are safest; long-tail tokens with high volatility carry the most risk.',
+    value: collateralValue,
+    contribution: collateralScore,
+    status: collateralScore <= 10 ? 'good' : collateralScore <= 15 ? 'ok' : collateralScore <= 25 ? 'caution' : 'bad',
   })
 
   // 2. Price oracle (worst oracle among assets)
@@ -125,32 +124,7 @@ export function scoreAssetRisk(vault: VaultData): DimensionScore {
     note: liqPenalty > 0 ? `${worstLiqAsset!.symbol} has less DEX liquidity than its vault allocation` : undefined,
   })
 
-  // 4. Price volatility — per-asset breakdown
-  const assetVols = activeAssets.map(a => ({
-    symbol: a.symbol,
-    vol: a.volatility30d,
-    weight: a.vaultWeightPct,
-  }))
-  const weightedVol = assetVols.reduce((s, v) => s + v.vol * (v.weight / 100), 0)
-  const baseVolScore = weightedVol < 0.01 ? 0 : weightedVol < 0.05 ? 5 : weightedVol < 0.15 ? 10 : 20
-  const worstVolAsset = assetVols.filter(v => v.weight > 10).sort((a, b) => b.vol - a.vol)[0]
-  const volPenalty = worstVolAsset && worstVolAsset.vol >= 0.30 ? 10 : 0
-  const volScore = baseVolScore + volPenalty
-  score += volScore
-  const volDetails = assetVols.map(v =>
-    `${v.symbol}: ${(v.vol * 100).toFixed(1)}%`
-  ).join(' · ')
-  const worstVol = assetVols.length > 0 ? Math.max(...assetVols.map(v => v.vol)) : 0
-  indicators.push({
-    name: 'Price volatility',
-    desc: '30-day price volatility per collateral asset. Higher volatility = faster chance of hitting the liquidation threshold.',
-    value: volDetails,
-    contribution: volScore,
-    status: worstVol < 0.01 ? 'good' : worstVol < 0.05 ? 'ok' : worstVol < 0.15 ? 'caution' : 'bad',
-    note: volPenalty > 0 ? `${worstVolAsset!.symbol} has extreme volatility (${(worstVolAsset!.vol * 100).toFixed(0)}%)` : undefined,
-  })
-
-  // 5. Vault withdrawability — can depositors actually exit?
+  // 4. Vault withdrawability — can depositors actually exit?
   const util = vault.weightedUtilization
   const mktLiq = vault.totalMarketLiquidityUsd
   const liqRatio = vault.tvlUsd > 0 ? mktLiq / vault.tvlUsd : 1
