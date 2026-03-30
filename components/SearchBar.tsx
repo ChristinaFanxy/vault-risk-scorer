@@ -8,13 +8,22 @@ export function SearchBar() {
   const [errorMsg, setErrorMsg] = useState('')
   const router = useRouter()
 
+  function extractAddress(input: string): string | null {
+    // Pure address: 0x followed by 40 hex chars
+    const addrMatch = input.match(/0x[0-9a-fA-F]{40}/)
+    if (addrMatch) return addrMatch[0]
+    return null
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     const trimmed = address.trim()
     if (!trimmed) return
-    if (!/^0x[0-9a-fA-F]{40}$/.test(trimmed)) {
+
+    const vaultAddress = extractAddress(trimmed)
+    if (!vaultAddress) {
       setStatus('error')
-      setErrorMsg('Please enter a valid vault address (0x followed by 40 hex characters)')
+      setErrorMsg('Could not find a vault address — paste a 0x address or a Morpho vault URL')
       return
     }
 
@@ -22,7 +31,7 @@ export function SearchBar() {
     setErrorMsg('')
 
     try {
-      const res = await fetch(`/api/detect-chain/${trimmed}`)
+      const res = await fetch(`/api/detect-chain/${vaultAddress}`)
       const data = await res.json()
 
       if (!res.ok || !data.chainId) {
@@ -31,7 +40,7 @@ export function SearchBar() {
         return
       }
 
-      router.push(`/vault/${data.chainId}/${trimmed}`)
+      router.push(`/vault/${data.chainId}/${vaultAddress}`)
     } catch {
       setStatus('error')
       setErrorMsg('Network error — please try again')
@@ -47,7 +56,7 @@ export function SearchBar() {
           type="text"
           value={address}
           onChange={e => { setAddress(e.target.value); setStatus('idle'); setErrorMsg('') }}
-          placeholder="Enter any Morpho vault address (0x...)"
+          placeholder="Paste vault address or Morpho URL"
           className="flex-1 bg-gray-800 border border-gray-600 text-white px-4 py-3 rounded-lg placeholder-gray-500 focus:outline-none focus:border-indigo-500"
         />
         <button
