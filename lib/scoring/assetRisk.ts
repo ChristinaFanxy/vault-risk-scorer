@@ -9,7 +9,7 @@ const ASSET_CLASS_SCORE: Record<AssetClass, number> = {
 
 const ORACLE_SCORE: Record<OracleType, number> = {
   chainlink: 0,
-  'uniswap-twap': 15,
+  'uniswap-twap': 5,
   custom: 30,
 }
 
@@ -68,7 +68,7 @@ export function scoreAssetRisk(vault: VaultData): DimensionScore {
     desc: 'Where collateral prices come from. Chainlink is battle-tested and widely audited; custom oracles carry more uncertainty.',
     value: oracleLabel,
     contribution: oracleScore,
-    status: worstOracle === 'chainlink' ? 'good' : worstOracle === 'uniswap-twap' ? 'caution' : 'bad',
+    status: worstOracle === 'chainlink' ? 'good' : worstOracle === 'uniswap-twap' ? 'ok' : 'bad',
   })
 
   // 2b. Oracle integrity — detect hardcoded price feeds
