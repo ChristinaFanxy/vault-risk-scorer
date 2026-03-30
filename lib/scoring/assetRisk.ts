@@ -150,26 +150,7 @@ export function scoreAssetRisk(vault: VaultData): DimensionScore {
     note: volPenalty > 0 ? `${worstVolAsset!.symbol} has extreme volatility (${(worstVolAsset!.vol * 100).toFixed(0)}%)` : undefined,
   })
 
-  // 5. Concentration
-  const maxWeight = Math.max(...vault.assets.map(a => a.vaultWeightPct))
-  const concentrated = activeAssets.length > 1 && maxWeight > 50
-  const concScore = concentrated ? 10 : 0
-  score += concScore
-  const concValue = activeAssets.length <= 1
-    ? `Single asset — ${dominant.symbol}`
-    : concentrated ? `${maxWeight.toFixed(1)}% in ${dominant.symbol}` : 'Diversified'
-  const concStatus = activeAssets.length <= 1 ? 'ok'
-    : concentrated ? 'caution' : 'good'
-  indicators.push({
-    name: 'Concentration',
-    desc: 'Whether one asset dominates the vault. Concentration means less diversification — one bad asset affects the whole pool.',
-    value: concValue,
-    contribution: concScore,
-    status: concStatus,
-    note: concentrated ? 'Single asset >50% of multi-asset vault' : undefined,
-  })
-
-  // 6. Vault withdrawability — can depositors actually exit?
+  // 5. Vault withdrawability — can depositors actually exit?
   const util = vault.weightedUtilization
   const mktLiq = vault.totalMarketLiquidityUsd
   const liqRatio = vault.tvlUsd > 0 ? mktLiq / vault.tvlUsd : 1
