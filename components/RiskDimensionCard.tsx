@@ -35,7 +35,9 @@ export function RiskDimensionCard({ dimensionScore, weightPct, placeholderFields
     <div>
       <div className="flex items-baseline gap-2 mb-4">
         <span className={`text-3xl font-bold ${scoreColor(score)}`}>{score}</span>
-        <span className="text-gray-400 text-sm">/100 · {weightPct}% of composite · lower = safer</span>
+        <span className="text-gray-400 text-sm">
+          {weightPct > 0 ? `/100 · ${weightPct}% of composite · lower = safer` : 'Reference only — not included in score'}
+        </span>
       </div>
 
       {placeholderFields.length > 0 && (

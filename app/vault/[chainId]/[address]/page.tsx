@@ -106,22 +106,9 @@ async function VaultContent({ chainId, address }: { chainId: string; address: st
         >
           <RiskDimensionCard
             dimensionScore={score.assetRisk}
-            weightPct={40}
+            weightPct={60}
             placeholderFields={score.placeholderFields.filter(f =>
               ['assets', 'oracleManipulationSurface'].includes(f)
-            )}
-          />
-        </CollapsibleCard>
-
-        <CollapsibleCard
-          title="Liquidation Rules Risk"
-          subtitle="Informational only — not scored"
-        >
-          <RiskDimensionCard
-            dimensionScore={score.liquidationRisk}
-            weightPct={35}
-            placeholderFields={score.placeholderFields.filter(f =>
-              ['maxLtvPct', 'liquidationThresholdPct'].includes(f)
             )}
           />
         </CollapsibleCard>
@@ -132,9 +119,22 @@ async function VaultContent({ chainId, address }: { chainId: string; address: st
         >
           <RiskDimensionCard
             dimensionScore={score.curatorRisk}
-            weightPct={25}
+            weightPct={40}
             placeholderFields={score.placeholderFields.filter(f =>
               ['curatorType', 'permissionScope', 'vaultsManaged', 'incidentCount', 'curatorBorrowsFromVault'].includes(f)
+            )}
+          />
+        </CollapsibleCard>
+
+        <CollapsibleCard
+          title="Liquidation Rules"
+          subtitle="Informational only — not scored"
+        >
+          <RiskDimensionCard
+            dimensionScore={score.liquidationRisk}
+            weightPct={0}
+            placeholderFields={score.placeholderFields.filter(f =>
+              ['maxLtvPct', 'liquidationThresholdPct'].includes(f)
             )}
           />
         </CollapsibleCard>
