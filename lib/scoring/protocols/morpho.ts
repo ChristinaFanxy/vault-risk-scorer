@@ -678,8 +678,8 @@ async function fetchMorphoV2VaultData(
     apy90dAvg: v2.apy90dAvg,
     apyHistory: v2.apyHistory,
     assets,
-    weightedUtilization: 0,               // V2 liquidity data not yet available
-    totalMarketLiquidityUsd: v2.tvlUsd,   // conservative default
+    weightedUtilization: v2.weightedUtilization,
+    totalMarketLiquidityUsd: v2.totalMarketLiquidityUsd,
     maxLtvPct,
     liquidationThresholdPct,
     liquidationBonusPct: 5,
@@ -694,7 +694,7 @@ async function fetchMorphoV2VaultData(
     curatorType,
     permissionScope,
     timelockHours,
-    vaultsManaged: curatorHistory?.historicalVaultCount ?? v2.vaultsManaged,
+    vaultsManaged: Math.max(curatorHistory?.historicalVaultCount ?? 0, v2.vaultsManaged),
     incidentCount: curatorHistory?.affectedMarketCount ?? incidentCount,
     curatorBorrowsFromVault: false,
     hasPublicAllocator: false,
@@ -816,7 +816,7 @@ export async function fetchMorphoVaultData(
     curatorType,
     permissionScope,
     timelockHours,
-    vaultsManaged: curatorHistory?.historicalVaultCount ?? curatorData?.vaultsManaged ?? 1,
+    vaultsManaged: Math.max(curatorHistory?.historicalVaultCount ?? 0, curatorData?.vaultsManaged ?? 1),
     incidentCount: curatorHistory?.affectedMarketCount ?? curatorData?.incidentCount ?? 0,
     curatorBorrowsFromVault: curatorData?.curatorBorrowsFromVault ?? false,
     hasPublicAllocator: curatorData?.hasPublicAllocator ?? false,

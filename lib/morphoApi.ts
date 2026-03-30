@@ -30,6 +30,8 @@ export interface MorphoV2Data {
     hasOracleWarning: boolean
   }>
   hasAdapterCaps: boolean   // true if any caps are opaque adapter-type (no market data)
+  weightedUtilization: number        // 0-1, weighted avg market utilization
+  totalMarketLiquidityUsd: number    // available (unborrowed) liquidity across markets (USD)
 }
 
 export interface MorphoYieldData {
@@ -195,6 +197,7 @@ const VAULT_V2_QUERY = `
               warnings { type }
               collateralAsset { address symbol }
               oracle { address }
+              state { utilization liquidityAssetsUsd }
             }
           }
           ... on AdapterCapData {
@@ -251,6 +254,7 @@ export async function fetchMorphoV2Data(
     warnings: Array<{ type: string }>
     collateralAsset: { address: string; symbol: string }
     oracle: { address: string }
+    state?: { utilization: number | null; liquidityAssetsUsd: number | null }
   }
   type Cap = {
     type: string
@@ -359,6 +363,18 @@ export async function fetchMorphoV2Data(
     return pts.reduce((s, p) => s + p.apyPct, 0) / pts.length
   }
 
+  // Calculate weighted utilization from MarketV1 caps with state data
+  const marketsWithState = marketV1Markets.map((m, i) => ({
+    supplyAssetsUsd: m.supplyAssetsUsd,
+    utilization: v1Caps[i]?.data.market?.state?.utilization ?? 0,
+    marketLiquidityUsd: v1Caps[i]?.data.market?.state?.liquidityAssetsUsd ?? 0,
+  }))
+  const totalV1Supply = marketsWithState.reduce((s, m) => s + m.supplyAssetsUsd, 0)
+  const weightedUtilization = totalV1Supply > 0
+    ? marketsWithState.reduce((s, m) => s + m.utilization * (m.supplyAssetsUsd / totalV1Supply), 0)
+    : 0
+  const totalMarketLiquidityUsd = marketsWithState.reduce((s, m) => s + m.marketLiquidityUsd, 0)
+
   return {
     name: vault.name,
     tvlUsd: vault.totalAssetsUsd,
@@ -375,6 +391,8 @@ export async function fetchMorphoV2Data(
     warnings: vault.warnings.map(w => w.type),
     markets,
     hasAdapterCaps,
+    weightedUtilization,
+    totalMarketLiquidityUsd,
   }
 }
 
