@@ -229,6 +229,7 @@ const METAMORPHO_MARKETS_QUERY = `
             warnings { type }
             collateralAsset { address symbol }
             oracle { address }
+            state { utilization liquidityAssetsUsd }
           }
         }
       }
@@ -335,25 +336,16 @@ export async function fetchMorphoV2Data(
     .filter(c => c.type === 'Adapter' && c.data.adapter?.metaMorpho?.address)
     .map(c => c.data.adapter!.metaMorpho!.address)
 
-  const metaMorphoMarkets = (await Promise.all(
+  type MmAllocation = { supplyAssetsUsd: number | null; market: MarketData & { collateralAsset: { address: string; symbol: string }; oracle: { address: string } } }
+  const metaMorphoRaw = (await Promise.all(
     metaMorphoAddresses.map(addr =>
-      gql<{
-        vault: {
-          state: {
-            allocation: Array<{
-              supplyAssetsUsd: number | null
-              market: MarketData & { collateralAsset: { address: string; symbol: string }; oracle: { address: string } }
-            }>
-          }
-        }
-      }>(METAMORPHO_MARKETS_QUERY, { address: addr, chainId })
-        .then(r => r.vault.state.allocation
-          .filter(a => (a.supplyAssetsUsd ?? 0) > 0)
-          .map(a => toMarket(a.market, a.supplyAssetsUsd ?? 0))
-        )
-        .catch(() => [] as ReturnType<typeof toMarket>[])
+      gql<{ vault: { state: { allocation: MmAllocation[] } } }>(
+        METAMORPHO_MARKETS_QUERY, { address: addr, chainId }
+      ).then(r => r.vault.state.allocation.filter(a => (a.supplyAssetsUsd ?? 0) > 0))
+        .catch(() => [] as MmAllocation[])
     )
   )).flat()
+  const metaMorphoMarkets = metaMorphoRaw.map(a => toMarket(a.market, a.supplyAssetsUsd ?? 0))
 
   const markets = [...marketV1Markets, ...metaMorphoMarkets]
 
@@ -377,17 +369,24 @@ export async function fetchMorphoV2Data(
     return pts.reduce((s, p) => s + p.apyPct, 0) / pts.length
   }
 
-  // Calculate weighted utilization from MarketV1 caps with state data
-  const marketsWithState = marketV1Markets.map((m, i) => ({
-    supplyAssetsUsd: m.supplyAssetsUsd,
-    utilization: v1Caps[i]?.data.market?.state?.utilization ?? 0,
-    marketLiquidityUsd: v1Caps[i]?.data.market?.state?.liquidityAssetsUsd ?? 0,
-  }))
-  const totalV1Supply = marketsWithState.reduce((s, m) => s + m.supplyAssetsUsd, 0)
-  const weightedUtilization = totalV1Supply > 0
-    ? marketsWithState.reduce((s, m) => s + m.utilization * (m.supplyAssetsUsd / totalV1Supply), 0)
+  // Calculate weighted utilization from ALL market sources (MarketV1 caps + MetaMorpho adapters)
+  const allMarketsWithState = [
+    ...marketV1Markets.map((m, i) => ({
+      supplyAssetsUsd: m.supplyAssetsUsd,
+      utilization: v1Caps[i]?.data.market?.state?.utilization ?? 0,
+      marketLiquidityUsd: v1Caps[i]?.data.market?.state?.liquidityAssetsUsd ?? 0,
+    })),
+    ...metaMorphoRaw.map(a => ({
+      supplyAssetsUsd: a.supplyAssetsUsd ?? 0,
+      utilization: a.market.state?.utilization ?? 0,
+      marketLiquidityUsd: a.market.state?.liquidityAssetsUsd ?? 0,
+    })),
+  ]
+  const totalSupplyForUtil = allMarketsWithState.reduce((s, m) => s + m.supplyAssetsUsd, 0)
+  const weightedUtilization = totalSupplyForUtil > 0
+    ? allMarketsWithState.reduce((s, m) => s + m.utilization * (m.supplyAssetsUsd / totalSupplyForUtil), 0)
     : 0
-  const totalMarketLiquidityUsd = marketsWithState.reduce((s, m) => s + m.marketLiquidityUsd, 0)
+  const totalMarketLiquidityUsd = allMarketsWithState.reduce((s, m) => s + m.marketLiquidityUsd, 0)
 
   return {
     name: vault.name,
