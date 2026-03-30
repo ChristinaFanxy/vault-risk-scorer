@@ -99,29 +99,55 @@ export function scoreAssetRisk(vault: VaultData): DimensionScore {
     })
   }
 
-  // 3. Market liquidity vs TVL
-  const totalLiquidity = vault.assets.reduce((s, a) => s + a.liquidityDepthUsd, 0)
-  const ratio = vault.tvlUsd > 0 ? totalLiquidity / vault.tvlUsd : 0
-  const liquidityScore = ratio >= 5 ? 0 : ratio >= 2 ? 5 : ratio >= 1 ? 15 : 25
+  // 3. Market liquidity — per-asset breakdown
+  const fmtUsd = (n: number) => n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(1)}M` : `$${(n / 1_000).toFixed(0)}K`
+  const assetRatios = activeAssets.map(a => {
+    const allocated = vault.tvlUsd * a.vaultWeightPct / 100
+    const ratio = allocated > 0 ? a.liquidityDepthUsd / allocated : 0
+    return { symbol: a.symbol, ratio, weight: a.vaultWeightPct, allocated, liquidity: a.liquidityDepthUsd }
+  })
+  const weightedLiqRatio = assetRatios.reduce((s, r) => s + r.ratio * (r.weight / 100), 0)
+  const baseRatioScore = weightedLiqRatio >= 5 ? 0 : weightedLiqRatio >= 2 ? 5 : weightedLiqRatio >= 1 ? 15 : 25
+  const worstLiqAsset = assetRatios.filter(r => r.weight > 10).sort((a, b) => a.ratio - b.ratio)[0]
+  const liqPenalty = worstLiqAsset && worstLiqAsset.ratio < 1 ? 10 : 0
+  const liquidityScore = baseRatioScore + liqPenalty
   score += liquidityScore
+  const liqDetails = assetRatios.map(r =>
+    `${r.symbol}: ${fmtUsd(r.allocated)} / ${fmtUsd(r.liquidity)} DEX (${r.ratio.toFixed(1)}×)`
+  ).join(' · ')
+  const worstRatio = assetRatios.length > 0 ? Math.min(...assetRatios.map(r => r.ratio)) : 0
   indicators.push({
     name: 'Market liquidity',
-    desc: 'How easily collateral can be sold in an emergency. If liquidity is smaller than the vault, a mass liquidation could cause losses.',
-    value: `${ratio.toFixed(1)}× vault size`,
+    desc: 'DEX liquidity available per collateral asset vs. vault allocation. If liquidity < allocation, a mass liquidation could cause losses.',
+    value: liqDetails,
     contribution: liquidityScore,
-    status: ratio >= 5 ? 'good' : ratio >= 2 ? 'ok' : ratio >= 1 ? 'caution' : 'bad',
+    status: worstRatio >= 5 ? 'good' : worstRatio >= 2 ? 'ok' : worstRatio >= 1 ? 'caution' : 'bad',
+    note: liqPenalty > 0 ? `${worstLiqAsset!.symbol} has less DEX liquidity than its vault allocation` : undefined,
   })
 
-  // 4. Price volatility (weighted 30d avg)
-  const weightedVol = vault.assets.reduce((s, a) => s + a.volatility30d * (a.vaultWeightPct / 100), 0)
-  const volScore = weightedVol < 0.01 ? 0 : weightedVol < 0.05 ? 5 : weightedVol < 0.15 ? 10 : 20
+  // 4. Price volatility — per-asset breakdown
+  const assetVols = activeAssets.map(a => ({
+    symbol: a.symbol,
+    vol: a.volatility30d,
+    weight: a.vaultWeightPct,
+  }))
+  const weightedVol = assetVols.reduce((s, v) => s + v.vol * (v.weight / 100), 0)
+  const baseVolScore = weightedVol < 0.01 ? 0 : weightedVol < 0.05 ? 5 : weightedVol < 0.15 ? 10 : 20
+  const worstVolAsset = assetVols.filter(v => v.weight > 10).sort((a, b) => b.vol - a.vol)[0]
+  const volPenalty = worstVolAsset && worstVolAsset.vol >= 0.30 ? 10 : 0
+  const volScore = baseVolScore + volPenalty
   score += volScore
+  const volDetails = assetVols.map(v =>
+    `${v.symbol}: ${(v.vol * 100).toFixed(1)}%`
+  ).join(' · ')
+  const worstVol = assetVols.length > 0 ? Math.max(...assetVols.map(v => v.vol)) : 0
   indicators.push({
     name: 'Price volatility',
-    desc: 'How much collateral prices swing over 30 days. Higher volatility = faster chance of hitting the liquidation threshold.',
-    value: `${(weightedVol * 100).toFixed(1)}% monthly average`,
+    desc: '30-day price volatility per collateral asset. Higher volatility = faster chance of hitting the liquidation threshold.',
+    value: volDetails,
     contribution: volScore,
-    status: weightedVol < 0.01 ? 'good' : weightedVol < 0.05 ? 'ok' : weightedVol < 0.15 ? 'caution' : 'bad',
+    status: worstVol < 0.01 ? 'good' : worstVol < 0.05 ? 'ok' : worstVol < 0.15 ? 'caution' : 'bad',
+    note: volPenalty > 0 ? `${worstVolAsset!.symbol} has extreme volatility (${(worstVolAsset!.vol * 100).toFixed(0)}%)` : undefined,
   })
 
   // 5. Concentration
