@@ -96,7 +96,6 @@ async function VaultContent({ chainId, address }: { chainId: string; address: st
             apy30dAvg={score.apy30dAvg}
             apy90dAvg={score.apy90dAvg}
             apyStabilityLabel={score.apyStabilityLabel}
-            apyHistory={score.apyHistory}
           />
         </CollapsibleCard>
 
