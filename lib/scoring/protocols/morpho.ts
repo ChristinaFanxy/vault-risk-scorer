@@ -461,7 +461,7 @@ async function fetchMarketAssets(
         symbol: market.collateralSymbol,
         assetClass,
         oracleType: oracleTypes[i] as OracleType,
-        liquidityDepthUsd: apiLiq ?? info?.liquidityDepthUsd ?? defaultLiquidity(assetClass),
+        liquidityDepthUsd: Math.max(apiLiq ?? 0, info?.liquidityDepthUsd ?? 0) || defaultLiquidity(assetClass),
         volatility30d: apiVol ?? info?.volatility30d ?? defaultVolatility(assetClass),
         vaultWeightPct: weight,
       }
@@ -545,7 +545,7 @@ async function fetchMarketAssets(
       symbol,
       assetClass,
       oracleType: oracleTypes[i] as OracleType,
-      liquidityDepthUsd: apiLiq ?? info?.liquidityDepthUsd ?? defaultLiquidity(assetClass),
+      liquidityDepthUsd: Math.max(apiLiq ?? 0, info?.liquidityDepthUsd ?? 0) || defaultLiquidity(assetClass),
       volatility30d: apiVol ?? info?.volatility30d ?? defaultVolatility(assetClass),
       vaultWeightPct: 100 / deduped.length, // equal weight — no allocation data in fallback
     }
@@ -623,7 +623,7 @@ async function fetchMorphoV2VaultData(
         symbol: m.collateralSymbol,
         assetClass,
         oracleType,
-        liquidityDepthUsd: apiLiq ?? info?.liquidityDepthUsd ?? defaultLiquidity(assetClass),
+        liquidityDepthUsd: Math.max(apiLiq ?? 0, info?.liquidityDepthUsd ?? 0) || defaultLiquidity(assetClass),
         volatility30d: apiVol ?? info?.volatility30d ?? defaultVolatility(assetClass),
         vaultWeightPct: weight,
       })
