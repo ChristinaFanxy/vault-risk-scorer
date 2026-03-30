@@ -289,11 +289,18 @@ export async function fetchMorphoV2Data(
   const addAdapterTimelock = vault.timelocks.find(t => t.selector === ADD_ADAPTER_SELECTOR)
   const addAdapterTimelockSeconds = addAdapterTimelock?.duration ?? 0
 
-  // Count V2 vaults managed by this curator
-  const vaultsManaged = await gql<{ vaultV2s: { items: Array<{ address: string }> } }>(
-    V2_VAULTS_BY_CURATOR_QUERY,
-    { curatorAddresses, chainIds: [1, 8453] }
-  ).then(r => Math.max(1, r.vaultV2s.items.length)).catch(() => 1)
+  // Count ALL vaults (V1 + V2) managed by this curator
+  const [v1Vaults, v2Vaults] = await Promise.all([
+    gql<{ vaults: { items: Array<{ address: string }> } }>(
+      VAULTS_BY_CURATOR_QUERY,
+      { curatorAddresses, chainIds: [1, 8453] }
+    ).then(r => r.vaults.items.map(v => v.address.toLowerCase())).catch(() => [] as string[]),
+    gql<{ vaultV2s: { items: Array<{ address: string }> } }>(
+      V2_VAULTS_BY_CURATOR_QUERY,
+      { curatorAddresses, chainIds: [1, 8453] }
+    ).then(r => r.vaultV2s.items.map(v => v.address.toLowerCase())).catch(() => [] as string[]),
+  ])
+  const vaultsManaged = Math.max(1, new Set([...v1Vaults, ...v2Vaults]).size)
 
   // Helper to convert a market object to our standard shape
   // supplyAssetsUsd = this vault's allocation to this market (not the market's total)
@@ -606,12 +613,16 @@ export async function fetchMorphoCuratorData(
         ? activeMarkets.reduce((s, a) => s + Number(a.market.lltv) / 1e18 * 100, 0) / activeMarkets.length
         : 80)
 
-  // Steps 2+3 in parallel: count vaults managed + check curator borrow positions
-  const [vaultsManaged, curatorBorrowsFromVault] = await Promise.all([
+  // Steps 2+3 in parallel: count ALL vaults (V1+V2) managed + check curator borrow positions
+  const [v1VaultAddrs, v2VaultAddrs, curatorBorrowsFromVault] = await Promise.all([
     gql<{ vaults: { items: Array<{ address: string }> } }>(
       VAULTS_BY_CURATOR_QUERY,
       { curatorAddresses: [curatorAddress], chainIds: [1, 8453] }
-    ).then(r => Math.max(1, r.vaults.items.length)).catch(() => 1),
+    ).then(r => r.vaults.items.map(v => v.address.toLowerCase())).catch(() => [] as string[]),
+    gql<{ vaultV2s: { items: Array<{ address: string }> } }>(
+      V2_VAULTS_BY_CURATOR_QUERY,
+      { curatorAddresses: [curatorAddress], chainIds: [1, 8453] }
+    ).then(r => r.vaultV2s.items.map(v => v.address.toLowerCase())).catch(() => [] as string[]),
 
     marketKeys.length > 0
       ? gql<{ marketPositions: { items: Array<{ state: { borrowAssets: number } }> } }>(
@@ -620,6 +631,7 @@ export async function fetchMorphoCuratorData(
         ).then(r => r.marketPositions.items.some(p => p.state.borrowAssets > 0)).catch(() => false)
       : Promise.resolve(false),
   ])
+  const vaultsManaged = Math.max(1, new Set([...v1VaultAddrs, ...v2VaultAddrs]).size)
 
   return {
     vaultName: vault.name ?? null,
