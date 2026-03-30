@@ -47,6 +47,8 @@ export interface VaultData {
 
   // Oracle
   oracleManipulationSurface: 'low' | 'medium' | 'high'
+  hardcodedOracleCount: number        // markets with price feeds that never change
+  hardcodedOracleSymbols: string[]    // e.g. ["USR", "wstUSR"]
 
   // Curator
   curatorAddress: string

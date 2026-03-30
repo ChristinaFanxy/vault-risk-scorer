@@ -71,6 +71,34 @@ export function scoreAssetRisk(vault: VaultData): DimensionScore {
     status: worstOracle === 'chainlink' ? 'good' : worstOracle === 'uniswap-twap' ? 'caution' : 'bad',
   })
 
+  // 2b. Oracle integrity — detect hardcoded price feeds
+  const hcCount = vault.hardcodedOracleCount
+  const hcSymbols = vault.hardcodedOracleSymbols
+  if (hcCount > 0) {
+    // Check how much weight the hardcoded assets carry
+    const hcWeight = vault.assets
+      .filter(a => hcSymbols.includes(a.symbol))
+      .reduce((s, a) => s + a.vaultWeightPct, 0)
+    const hcScore = hcWeight >= 20 ? 30 : 15
+    score += hcScore
+    indicators.push({
+      name: 'Oracle integrity',
+      desc: 'Whether price feeds actually track market prices. Hardcoded oracles always return the same price — if the asset depegs, the oracle won\'t reflect it, making liquidations impossible.',
+      value: `${hcCount} market(s) use hardcoded price (${hcSymbols.join(', ')})`,
+      contribution: hcScore,
+      status: hcWeight >= 20 ? 'bad' : 'caution',
+      note: 'Price feed returns identical value across multiple weeks — cannot reflect market reality',
+    })
+  } else {
+    indicators.push({
+      name: 'Oracle integrity',
+      desc: 'Whether price feeds actually track market prices. Hardcoded oracles always return the same price — if the asset depegs, the oracle won\'t reflect it, making liquidations impossible.',
+      value: 'All feeds track live prices',
+      contribution: 0,
+      status: 'good',
+    })
+  }
+
   // 3. Market liquidity vs TVL
   const totalLiquidity = vault.assets.reduce((s, a) => s + a.liquidityDepthUsd, 0)
   const ratio = vault.tvlUsd > 0 ? totalLiquidity / vault.tvlUsd : 0

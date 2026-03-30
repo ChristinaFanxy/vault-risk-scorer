@@ -69,7 +69,10 @@ const VAULT_ALLOCATION_QUERY = `
             uniqueKey
             lltv
             collateralAsset { address symbol }
-            oracle { address }
+            oracle {
+              address
+              data { ... on MorphoChainlinkOracleV2Data { baseFeedOne { address pair } } }
+            }
             state { utilization liquidityAssetsUsd }
           }
         }
@@ -344,6 +347,8 @@ export interface VaultMarketAllocation {
   collateralAddress: string
   collateralSymbol: string
   oracleAddress: string
+  baseFeedOneAddress: string | null  // underlying Chainlink feed address, null = no feed
+  baseFeedOnePair: string | null     // e.g. "ETH / USD", null = not standard Chainlink
   utilization: number            // 0-1, market-level utilization
   marketLiquidityUsd: number     // available (unborrowed) liquidity in this market
 }
@@ -372,7 +377,10 @@ export async function fetchVaultAllocation(
             uniqueKey: string
             lltv: string
             collateralAsset: { address: string; symbol: string } | null
-            oracle: { address: string }
+            oracle: {
+              address: string
+              data: { baseFeedOne: { address: string; pair: string | null } | null } | null
+            }
             state: { utilization: number | null; liquidityAssetsUsd: number | null }
           }
         }>
@@ -389,6 +397,8 @@ export async function fetchVaultAllocation(
       collateralAddress: a.market.collateralAsset!.address,
       collateralSymbol: a.market.collateralAsset!.symbol,
       oracleAddress: a.market.oracle.address,
+      baseFeedOneAddress: a.market.oracle.data?.baseFeedOne?.address ?? null,
+      baseFeedOnePair: a.market.oracle.data?.baseFeedOne?.pair ?? null,
       utilization: a.market.state.utilization ?? 0,
       marketLiquidityUsd: a.market.state.liquidityAssetsUsd ?? 0,
     }))

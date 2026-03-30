@@ -10,6 +10,7 @@ const safeVault: VaultData = {
   maxLtvPct: 75, liquidationThresholdPct: 85,  // 10% buffer
   liquidationBonusPct: 8, liquidationMechanism: 'dutch-auction',
   historicalBadDebtUsd: 0, oracleManipulationSurface: 'low',
+  hardcodedOracleCount: 0, hardcodedOracleSymbols: [],
   curatorName: null, curatorAddress: '0x0', curatorType: 'institution', permissionScope: 'narrow',
   timelockHours: 72, vaultsManaged: 5, incidentCount: 0, curatorBorrowsFromVault: false,
   placeholderFields: [],

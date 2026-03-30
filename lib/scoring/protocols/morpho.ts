@@ -155,10 +155,84 @@ async function detectOracleType(
   return 'custom'
 }
 
+const CHAINLINK_ROUND_DATA_ABI_HISTORICAL = [
+  {
+    name: 'latestRoundData',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [
+      { name: 'roundId', type: 'uint80' },
+      { name: 'answer', type: 'int256' },
+      { name: 'startedAt', type: 'uint256' },
+      { name: 'updatedAt', type: 'uint256' },
+      { name: 'answeredInRound', type: 'uint80' },
+    ],
+  },
+] as const
+
+const BLOCKS_PER_DAY = 7200   // ~12s per block on Ethereum
+const BLOCKS_PER_WEEK = BLOCKS_PER_DAY * 7
+
+/**
+ * Detects hardcoded price feeds by checking if `latestRoundData().answer` is
+ * identical across 4 historical block samples. Returns a set of feed addresses
+ * whose prices never change.
+ */
+async function detectHardcodedFeeds(
+  client: ReturnType<typeof getClient>,
+  feeds: Array<{ feedAddress: string; symbol: string }>,
+): Promise<Set<string>> {
+  if (feeds.length === 0) return new Set()
+
+  const currentBlock = await client.getBlockNumber()
+  const current = Number(currentBlock)
+
+  // 4 sample points: now, 1 day ago, 1 week ago, 2 weeks ago
+  // If vault is too new (< 2 weeks), distribute evenly across its lifetime
+  const twoWeeksBack = current - BLOCKS_PER_WEEK * 2
+  const sampleBlocks = twoWeeksBack > 0
+    ? [current, current - BLOCKS_PER_DAY, current - BLOCKS_PER_WEEK, twoWeeksBack]
+    : [current, Math.floor(current * 0.75), Math.floor(current * 0.5), Math.floor(current * 0.25)]
+
+  const hardcoded = new Set<string>()
+
+  // For each feed, query latestRoundData at all 4 blocks in parallel
+  await Promise.all(feeds.map(async ({ feedAddress, symbol }) => {
+    try {
+      const answers = await Promise.all(
+        sampleBlocks.map(block =>
+          client.readContract({
+            address: feedAddress as `0x${string}`,
+            abi: CHAINLINK_ROUND_DATA_ABI_HISTORICAL,
+            functionName: 'latestRoundData',
+            blockNumber: BigInt(block),
+          }).then(([_roundId, answer]) => answer).catch(() => null)
+        )
+      )
+
+      // Need at least 3 successful reads to judge
+      const valid = answers.filter((a): a is bigint => a !== null)
+      if (valid.length < 3) return
+
+      // All identical → hardcoded
+      const allSame = valid.every(a => a === valid[0])
+      if (allSame) {
+        hardcoded.add(symbol)
+      }
+    } catch {
+      // Feed doesn't support latestRoundData — skip
+    }
+  }))
+
+  return hardcoded
+}
+
 type MarketAssetsResult = {
   assets: VaultData['assets']
   oracleManipulationSurface: VaultData['oracleManipulationSurface']
   liquidity: VaultLiquidity | null
+  hardcodedOracleSymbols: string[]
 }
 
 async function fetchMarketAssets(
@@ -193,8 +267,19 @@ async function fetchMarketAssets(
     const deduped = [...seenAddr.values()]
     const totalSupply = deduped.reduce((s, d) => s + d.supplyAssetsUsd, 0)
 
-    // Detect oracle types on-chain + fetch token metrics in parallel
-    const [oracleTypes, tokenMetrics] = await Promise.all([
+    // Collect feeds that need hardcoded detection (unique by feed address, skip nulls)
+    const feedsToCheck: Array<{ feedAddress: string; symbol: string }> = []
+    const seenFeeds = new Set<string>()
+    for (const { market } of deduped) {
+      const fa = market.baseFeedOneAddress
+      if (fa && !seenFeeds.has(fa.toLowerCase())) {
+        seenFeeds.add(fa.toLowerCase())
+        feedsToCheck.push({ feedAddress: fa, symbol: market.collateralSymbol })
+      }
+    }
+
+    // Detect oracle types, token metrics, and hardcoded feeds — all in parallel
+    const [oracleTypes, tokenMetrics, hardcodedSymbols] = await Promise.all([
       Promise.all(deduped.map(({ market }) =>
         detectOracleType(client, market.oracleAddress as Address)
       )),
@@ -204,6 +289,7 @@ async function fetchMarketAssets(
           fetchTokenLiquidityUsd(market.collateralAddress, chainIdNum),
         ])
       )),
+      detectHardcodedFeeds(client, feedsToCheck).catch(() => new Set<string>()),
     ])
 
     const uniqueOracleTypes = new Set(oracleTypes as OracleType[])
@@ -230,14 +316,14 @@ async function fetchMarketAssets(
       }
     })
 
-    return { assets, oracleManipulationSurface, liquidity: apiLiquidity }
+    return { assets, oracleManipulationSurface, liquidity: apiLiquidity, hardcodedOracleSymbols: [...hardcodedSymbols] }
   }
 
   // Fallback: on-chain withdraw queue (limited to 15 markets)
   const queueLength = await withRetry(() =>
     client.readContract({ address: vaultAddress, abi: METAMORPHO_ABI, functionName: 'withdrawQueueLength' })
   )
-  if (queueLength === BigInt(0)) return { assets: [], oracleManipulationSurface: 'low', liquidity: null }
+  if (queueLength === BigInt(0)) return { assets: [], oracleManipulationSurface: 'low', liquidity: null, hardcodedOracleSymbols: [] }
 
   const count = Math.min(Number(queueLength), 15)
   const marketIds = await Promise.all(
@@ -314,7 +400,7 @@ async function fetchMarketAssets(
     }
   })
 
-  return { assets, oracleManipulationSurface, liquidity: null }
+  return { assets, oracleManipulationSurface, liquidity: null, hardcodedOracleSymbols: [] }
 }
 
 /**
@@ -433,6 +519,8 @@ async function fetchMorphoV2VaultData(
     liquidationMechanism: 'dutch-auction',
     historicalBadDebtUsd: totalRealizedBadDebtUsd,
     oracleManipulationSurface,
+    hardcodedOracleCount: 0,            // V2 oracle detection not yet implemented
+    hardcodedOracleSymbols: [],
     curatorAddress: v2.curatorAddress,
     curatorName: v2.curatorName,
     curatorType,
@@ -473,11 +561,11 @@ export async function fetchMorphoVaultData(
       ? fetchVaultYield(defillamaPoolId).catch(() => fetchMorphoYieldData(address, chainId))
       : fetchMorphoYieldData(address, chainId),
     fetchMorphoBadDebt(address, chainId),
-    fetchMarketAssets(checksumAddress, chainId, client, chainId).catch(() => ({ assets: [], oracleManipulationSurface: 'low' as const, liquidity: null })),
+    fetchMarketAssets(checksumAddress, chainId, client, chainId).catch(() => ({ assets: [], oracleManipulationSurface: 'low' as const, liquidity: null, hardcodedOracleSymbols: [] as string[] })),
     fetchMorphoCuratorData(address, chainId).catch(() => null),
   ])
   const yield_ = yieldResult
-  const { assets, liquidity } = marketResult
+  const { assets, liquidity, hardcodedOracleSymbols } = marketResult
   // When Morpho API is available, trust its oracle validation over on-chain detection.
   // On-chain detectOracleType() misclassifies MorphoChainlinkOracleV2 as 'custom' when
   // BASE_FEED_ONE() reverts (zero address). Morpho's incorrect_oracle_configuration warning
@@ -544,6 +632,8 @@ export async function fetchMorphoVaultData(
     liquidationMechanism: 'dutch-auction',
     historicalBadDebtUsd,
     oracleManipulationSurface,
+    hardcodedOracleCount: hardcodedOracleSymbols.length,
+    hardcodedOracleSymbols,
     curatorAddress: curatorData?.curatorAddress ?? address,
     curatorName: curatorData?.curatorName ?? null,
     curatorType,
