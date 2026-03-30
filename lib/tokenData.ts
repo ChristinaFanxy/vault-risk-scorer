@@ -9,11 +9,6 @@ const DEFILLAMA_CHAIN: Record<number, string> = {
   8453: 'base',
 }
 
-const DEXSCREENER_CHAIN: Record<number, string> = {
-  1: 'ethereum',
-  8453: 'base',
-}
-
 /**
  * 30-day realized volatility from DefiLlama daily price history.
  * Returns stddev of daily log returns × sqrt(30) — i.e. monthly-scale vol.
@@ -57,17 +52,17 @@ export async function fetchTokenVolatility30d(
 }
 
 /**
- * Total DEX liquidity for a token on a specific chain from DexScreener.
- * Sums liquidity.usd across all trading pairs on that chain.
+ * Total DEX liquidity for a token across ALL chains from DexScreener.
+ * Sums liquidity.usd across all trading pairs regardless of chain,
+ * because the same bridged token (e.g. cbBTC) should reflect global
+ * liquidity depth for risk scoring purposes.
  * Returns null if token not found on any DEX.
  */
 export async function fetchTokenLiquidityUsd(
   tokenAddress: string,
-  chainId: number
+  _chainId: number
 ): Promise<number | null> {
   if (tokenAddress.toLowerCase() === ZERO_ADDRESS) return null
-  const chainName = DEXSCREENER_CHAIN[chainId]
-  if (!chainName) return null
 
   try {
     const res = await fetch(
@@ -78,7 +73,6 @@ export async function fetchTokenLiquidityUsd(
     const data = await res.json() as { pairs?: Array<{ chainId: string; liquidity?: { usd?: number } }> }
 
     const total = (data.pairs ?? [])
-      .filter(p => p.chainId === chainName)
       .reduce((s, p) => s + (p.liquidity?.usd ?? 0), 0)
 
     return total > 0 ? total : null
