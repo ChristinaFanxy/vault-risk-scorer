@@ -173,7 +173,10 @@ export async function fetchCuratorAllAddresses(knownAddress: string): Promise<st
 
 const VAULTS_BY_CURATOR_QUERY = `
   query VaultsByCurator($curatorAddresses: [String!]!, $chainIds: [Int!]!) {
-    vaults(where: { curatorAddress_in: $curatorAddresses, chainId_in: $chainIds }) {
+    byCurator: vaults(where: { curatorAddress_in: $curatorAddresses, chainId_in: $chainIds }) {
+      items { address }
+    }
+    byOwner: vaults(where: { ownerAddress_in: $curatorAddresses, chainId_in: $chainIds }) {
       items { address }
     }
   }
@@ -235,7 +238,10 @@ const METAMORPHO_MARKETS_QUERY = `
 
 const V2_VAULTS_BY_CURATOR_QUERY = `
   query V2VaultsByCurator($curatorAddresses: [String!]!, $chainIds: [Int!]!) {
-    vaultV2s(where: { curatorAddress_in: $curatorAddresses, chainId_in: $chainIds }) {
+    byCurator: vaultV2s(where: { curatorAddress_in: $curatorAddresses, chainId_in: $chainIds }) {
+      items { address }
+    }
+    byOwner: vaultV2s(where: { ownerAddress_in: $curatorAddresses, chainId_in: $chainIds }) {
       items { address }
     }
   }
@@ -289,16 +295,17 @@ export async function fetchMorphoV2Data(
   const addAdapterTimelock = vault.timelocks.find(t => t.selector === ADD_ADAPTER_SELECTOR)
   const addAdapterTimelockSeconds = addAdapterTimelock?.duration ?? 0
 
-  // Count ALL vaults (V1 + V2) managed by this curator
+  // Count ALL vaults (V1 + V2) managed by this curator (query both curator and owner fields)
+  type VaultItems = { items: Array<{ address: string }> }
   const [v1Vaults, v2Vaults] = await Promise.all([
-    gql<{ vaults: { items: Array<{ address: string }> } }>(
+    gql<{ byCurator: VaultItems; byOwner: VaultItems }>(
       VAULTS_BY_CURATOR_QUERY,
       { curatorAddresses, chainIds: [1, 8453] }
-    ).then(r => r.vaults.items.map(v => v.address.toLowerCase())).catch(() => [] as string[]),
-    gql<{ vaultV2s: { items: Array<{ address: string }> } }>(
+    ).then(r => [...r.byCurator.items, ...r.byOwner.items].map(v => v.address.toLowerCase())).catch(() => [] as string[]),
+    gql<{ byCurator: VaultItems; byOwner: VaultItems }>(
       V2_VAULTS_BY_CURATOR_QUERY,
       { curatorAddresses, chainIds: [1, 8453] }
-    ).then(r => r.vaultV2s.items.map(v => v.address.toLowerCase())).catch(() => [] as string[]),
+    ).then(r => [...r.byCurator.items, ...r.byOwner.items].map(v => v.address.toLowerCase())).catch(() => [] as string[]),
   ])
   const vaultsManaged = Math.max(1, new Set([...v1Vaults, ...v2Vaults]).size)
 
@@ -614,15 +621,16 @@ export async function fetchMorphoCuratorData(
         : 80)
 
   // Steps 2+3 in parallel: count ALL vaults (V1+V2) managed + check curator borrow positions
+  type VaultItems = { items: Array<{ address: string }> }
   const [v1VaultAddrs, v2VaultAddrs, curatorBorrowsFromVault] = await Promise.all([
-    gql<{ vaults: { items: Array<{ address: string }> } }>(
+    gql<{ byCurator: VaultItems; byOwner: VaultItems }>(
       VAULTS_BY_CURATOR_QUERY,
       { curatorAddresses: [curatorAddress], chainIds: [1, 8453] }
-    ).then(r => r.vaults.items.map(v => v.address.toLowerCase())).catch(() => [] as string[]),
-    gql<{ vaultV2s: { items: Array<{ address: string }> } }>(
+    ).then(r => [...r.byCurator.items, ...r.byOwner.items].map(v => v.address.toLowerCase())).catch(() => [] as string[]),
+    gql<{ byCurator: VaultItems; byOwner: VaultItems }>(
       V2_VAULTS_BY_CURATOR_QUERY,
       { curatorAddresses: [curatorAddress], chainIds: [1, 8453] }
-    ).then(r => r.vaultV2s.items.map(v => v.address.toLowerCase())).catch(() => [] as string[]),
+    ).then(r => [...r.byCurator.items, ...r.byOwner.items].map(v => v.address.toLowerCase())).catch(() => [] as string[]),
 
     marketKeys.length > 0
       ? gql<{ marketPositions: { items: Array<{ state: { borrowAssets: number } }> } }>(
