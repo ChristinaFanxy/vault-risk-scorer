@@ -1,5 +1,5 @@
 'use client'
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
 
 export type Lang = 'en' | 'zh'
 
@@ -58,6 +58,9 @@ const translations = {
     unrealizedDesc: (amt: string) => `${amt} in stuck borrows found across historical markets. These are markets with >97% utilization and less than $10K remaining liquidity where this curator's vaults still have supply positions but borrowers have not repaid. The protocol has not formally "realized" this as bad debt yet, but the funds are effectively locked.`,
     dataSource: 'Data source: The Graph Morpho Blue subgraph (immutable on-chain data)',
     sharedMarkets: 'Shared markets may attribute the same bad debt to multiple curators.',
+
+    // Footer
+    disclaimer: 'For informational purposes only. Not investment advice.',
 
     // Grades
     gradeA: 'Low Risk',
@@ -121,6 +124,9 @@ const translations = {
     dataSource: '\u6570\u636e\u6765\u6e90\uff1aThe Graph Morpho Blue \u5b50\u56fe\uff08\u4e0d\u53ef\u7be1\u6539\u7684\u94fe\u4e0a\u6570\u636e\uff09',
     sharedMarkets: '\u5171\u4eab\u5e02\u573a\u53ef\u80fd\u5c06\u540c\u4e00\u574f\u8d26\u5f52\u56e0\u4e8e\u591a\u4e2a\u7ba1\u7406\u4eba\u3002',
 
+    // 页脚
+    disclaimer: '仅供参考，不构成投资建议。',
+
     // 等级
     gradeA: '\u4f4e\u98ce\u9669',
     gradeB: '\u4e2d\u7b49\u98ce\u9669',
@@ -143,8 +149,16 @@ const LanguageContext = createContext<{
 })
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>('en')
-  const setLang = useCallback((l: Lang) => setLangState(l), [])
+  const [lang, setLangState] = useState<Lang>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('lang') as Lang) || 'en'
+    }
+    return 'en'
+  })
+  const setLang = useCallback((l: Lang) => {
+    setLangState(l)
+    if (typeof window !== 'undefined') localStorage.setItem('lang', l)
+  }, [])
   const t = translations[lang]
 
   return (
