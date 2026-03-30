@@ -17,7 +17,7 @@ const baseVault: VaultData = {
   oracleManipulationSurface: 'low',
   hardcodedOracleCount: 0, hardcodedOracleSymbols: [],
   curatorName: null, curatorAddress: '0xcurator', curatorType: 'institution', permissionScope: 'narrow',
-  timelockHours: 72, vaultsManaged: 5, incidentCount: 0, curatorBorrowsFromVault: false,
+  timelockHours: 72, vaultsManaged: 5, incidentCount: 0, curatorBorrowsFromVault: false, hasPublicAllocator: false,
   placeholderFields: [],
 }
 

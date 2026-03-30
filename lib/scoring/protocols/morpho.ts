@@ -697,6 +697,7 @@ async function fetchMorphoV2VaultData(
     vaultsManaged: curatorHistory?.historicalVaultCount ?? v2.vaultsManaged,
     incidentCount: curatorHistory?.affectedMarketCount ?? incidentCount,
     curatorBorrowsFromVault: false,
+    hasPublicAllocator: false,
     placeholderFields,
   }
 }
@@ -818,6 +819,7 @@ export async function fetchMorphoVaultData(
     vaultsManaged: curatorHistory?.historicalVaultCount ?? curatorData?.vaultsManaged ?? 1,
     incidentCount: curatorHistory?.affectedMarketCount ?? curatorData?.incidentCount ?? 0,
     curatorBorrowsFromVault: curatorData?.curatorBorrowsFromVault ?? false,
+    hasPublicAllocator: curatorData?.hasPublicAllocator ?? false,
     placeholderFields,
   }
 }

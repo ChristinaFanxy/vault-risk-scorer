@@ -12,7 +12,7 @@ const safeVault: VaultData = {
   historicalBadDebtUsd: 0, unrealizedBadDebtUsd: 0, oracleManipulationSurface: 'low',
   hardcodedOracleCount: 0, hardcodedOracleSymbols: [],
   curatorName: null, curatorAddress: '0x0', curatorType: 'institution', permissionScope: 'narrow',
-  timelockHours: 72, vaultsManaged: 5, incidentCount: 0, curatorBorrowsFromVault: false,
+  timelockHours: 72, vaultsManaged: 5, incidentCount: 0, curatorBorrowsFromVault: false, hasPublicAllocator: false,
   placeholderFields: [],
 }
 

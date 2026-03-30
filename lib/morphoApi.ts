@@ -56,6 +56,7 @@ export interface MorphoCuratorData {
   weightedAvgLltvPct: number        // supply-weighted avg LLTV across non-idle markets
   totalRealizedBadDebtUsd: number   // sum of realizedBadDebt across all vault markets
   hasOracleWarning: boolean         // any market has incorrect_oracle_configuration
+  hasPublicAllocator: boolean       // anyone can trigger fund reallocation
 }
 
 const VAULT_ALLOCATION_QUERY = `
@@ -119,6 +120,10 @@ const VAULT_CURATOR_QUERY = `
         }
       }
       warnings { type level }
+      publicAllocatorConfig {
+        fee
+        flowCaps { market { uniqueKey } maxIn maxOut }
+      }
     }
   }
 `
@@ -539,6 +544,10 @@ export async function fetchMorphoCuratorData(
         allocation: Allocation[]
       }
       warnings: Array<{ type: string; level: string }>
+      publicAllocatorConfig: {
+        fee: number
+        flowCaps: Array<{ market: { uniqueKey: string }; maxIn: string; maxOut: string }>
+      } | null
     }
   }>(VAULT_CURATOR_QUERY, { address: vaultAddress, chainId })
 
@@ -609,5 +618,6 @@ export async function fetchMorphoCuratorData(
     weightedAvgLltvPct,
     totalRealizedBadDebtUsd,
     hasOracleWarning,
+    hasPublicAllocator: (vault.publicAllocatorConfig?.flowCaps?.length ?? 0) > 0,
   }
 }

@@ -60,6 +60,7 @@ export interface VaultData {
   vaultsManaged: number
   incidentCount: number
   curatorBorrowsFromVault: boolean
+  hasPublicAllocator: boolean    // anyone can trigger fund reallocation across markets
 
   /** Indicators that used placeholder data — shown in UI as "estimated" */
   placeholderFields: string[]

@@ -83,6 +83,17 @@ export function scoreCuratorRisk(vault: VaultData): DimensionScore {
     link: (vault.incidentCount > 0 || bd > 10) ? `/curator/${vault.curatorAddress}` : undefined,
   })
 
+  // 5. Public Allocator
+  const paScore = vault.hasPublicAllocator ? 5 : 0
+  score += paScore
+  indicators.push({
+    name: 'Public Allocator',
+    desc: 'Whether anyone can trigger fund reallocation across markets. Increases the surface area for unintended capital movement.',
+    value: vault.hasPublicAllocator ? 'Enabled — anyone can trigger reallocation' : 'Disabled',
+    contribution: paScore,
+    status: vault.hasPublicAllocator ? 'caution' : 'good',
+  })
+
   // 6. Conflicts of interest
   const coiScore = vault.curatorBorrowsFromVault ? 15 : 0
   score += coiScore

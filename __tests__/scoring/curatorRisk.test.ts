@@ -13,7 +13,7 @@ const trusted: VaultData = {
   hardcodedOracleCount: 0, hardcodedOracleSymbols: [],
   curatorName: null, curatorAddress: '0xcurator', curatorType: 'institution',
   permissionScope: 'narrow', timelockHours: 72,
-  vaultsManaged: 10, incidentCount: 0, curatorBorrowsFromVault: false,
+  vaultsManaged: 10, incidentCount: 0, curatorBorrowsFromVault: false, hasPublicAllocator: false,
   placeholderFields: [],
 }
 
