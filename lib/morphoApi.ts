@@ -620,16 +620,19 @@ export async function fetchMorphoCuratorData(
         ? activeMarkets.reduce((s, a) => s + Number(a.market.lltv) / 1e18 * 100, 0) / activeMarkets.length
         : 80)
 
+  // Resolve ALL addresses for this curator via registry (handles multi-address curators)
+  const allCuratorAddresses = await fetchCuratorAllAddresses(curatorAddress)
+
   // Steps 2+3 in parallel: count ALL vaults (V1+V2) managed + check curator borrow positions
   type VaultItems = { items: Array<{ address: string }> }
   const [v1VaultAddrs, v2VaultAddrs, curatorBorrowsFromVault] = await Promise.all([
     gql<{ byCurator: VaultItems; byOwner: VaultItems }>(
       VAULTS_BY_CURATOR_QUERY,
-      { curatorAddresses: [curatorAddress], chainIds: [1, 8453] }
+      { curatorAddresses: allCuratorAddresses, chainIds: [1, 8453] }
     ).then(r => [...r.byCurator.items, ...r.byOwner.items].map(v => v.address.toLowerCase())).catch(() => [] as string[]),
     gql<{ byCurator: VaultItems; byOwner: VaultItems }>(
       V2_VAULTS_BY_CURATOR_QUERY,
-      { curatorAddresses: [curatorAddress], chainIds: [1, 8453] }
+      { curatorAddresses: allCuratorAddresses, chainIds: [1, 8453] }
     ).then(r => [...r.byCurator.items, ...r.byOwner.items].map(v => v.address.toLowerCase())).catch(() => [] as string[]),
 
     marketKeys.length > 0
