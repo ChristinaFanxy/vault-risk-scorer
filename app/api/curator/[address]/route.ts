@@ -18,14 +18,15 @@ export async function GET(
 
     // Detect unrealized bad debt on-chain
     const realizedUsd = history?.totalBadDebtUsd ?? 0
-    const unrealizedBadDebtUsd = history?.allMarketIds
-      ? await detectUnrealizedBadDebt(history.allMarketIds, history.allVaultAddresses, realizedUsd).catch(() => 0)
-      : 0
+    const unrealizedResult = history?.allMarketIds
+      ? await detectUnrealizedBadDebt(history.allMarketIds, history.allVaultAddresses, realizedUsd).catch(() => ({ totalUsd: 0, markets: [] }))
+      : { totalUsd: 0, markets: [] }
 
     return NextResponse.json({
       curatorAddress: address,
       allAddresses,
-      unrealizedBadDebtUsd,
+      unrealizedBadDebtUsd: unrealizedResult.totalUsd,
+      unrealizedMarkets: unrealizedResult.markets,
       history: history ?? {
         totalBadDebtUsd: 0,
         eventCount: 0,

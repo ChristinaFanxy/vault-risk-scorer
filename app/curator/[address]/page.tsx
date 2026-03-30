@@ -39,9 +39,11 @@ export default async function CuratorPage({
   const historicalVaultCount = history?.historicalVaultCount ?? 0
 
   // Detect unrealized bad debt on-chain
-  const unrealizedBadDebtUsd = history?.allMarketIds
-    ? await detectUnrealizedBadDebt(history.allMarketIds, history.allVaultAddresses, totalBadDebtUsd).catch(() => 0)
-    : 0
+  const unrealizedResult = history?.allMarketIds
+    ? await detectUnrealizedBadDebt(history.allMarketIds, history.allVaultAddresses, totalBadDebtUsd).catch(() => ({ totalUsd: 0, markets: [] as Array<{ marketId: string; chainId: number; badDebtUsd: number }> }))
+    : { totalUsd: 0, markets: [] as Array<{ marketId: string; chainId: number; badDebtUsd: number }> }
+  const unrealizedBadDebtUsd = unrealizedResult.totalUsd
+  const unrealizedMarkets = unrealizedResult.markets
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 p-6 max-w-4xl mx-auto">
@@ -91,6 +93,24 @@ export default async function CuratorPage({
             but borrowers have not repaid. The protocol has not formally &quot;realized&quot; this as bad debt yet,
             but the funds are effectively locked.
           </p>
+          {unrealizedMarkets.length > 0 && (
+            <div className="mt-3 space-y-1">
+              {unrealizedMarkets.sort((a, b) => b.badDebtUsd - a.badDebtUsd).map(m => (
+                <div key={m.marketId} className="flex items-center gap-2 text-xs">
+                  <a
+                    href={morphoMarketUrl(m.marketId, m.chainId)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-orange-400 hover:text-orange-300 font-mono"
+                  >
+                    {shortenId(m.marketId)}
+                  </a>
+                  <span className="text-gray-600">{CHAIN_LABELS[m.chainId] ?? `Chain ${m.chainId}`}</span>
+                  <span className="text-orange-300 font-medium">{fmtUsd(m.badDebtUsd)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

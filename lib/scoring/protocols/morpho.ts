@@ -199,12 +199,17 @@ const BLOCKS_PER_WEEK = BLOCKS_PER_DAY * 7
  * calculate the vault's pro-rata share of the stuck borrows — not the whole market total.
  * This catches cases like the Resolv USR incident ($6M+ stuck but never formally realized).
  */
+export type UnrealizedBadDebtResult = {
+  totalUsd: number
+  markets: Array<{ marketId: string; chainId: ChainId; badDebtUsd: number }>
+}
+
 export async function detectUnrealizedBadDebt(
   historicalMarketIds: Array<{ marketId: string; chainId: ChainId }>,
   vaultAddresses: string[],
   realizedBadDebtUsd: number,
-): Promise<number> {
-  if (historicalMarketIds.length === 0 || vaultAddresses.length === 0) return 0
+): Promise<UnrealizedBadDebtResult> {
+  if (historicalMarketIds.length === 0 || vaultAddresses.length === 0) return { totalUsd: 0, markets: [] }
 
   const byChain = new Map<ChainId, string[]>()
   for (const m of historicalMarketIds) {
@@ -214,6 +219,7 @@ export async function detectUnrealizedBadDebt(
   }
 
   let totalUnrealizedUsd = 0
+  const affectedMarkets: UnrealizedBadDebtResult['markets'] = []
 
   for (const [chainId, marketIds] of byChain) {
     const client = getClient(chainId)
@@ -318,11 +324,13 @@ export async function detectUnrealizedBadDebt(
       const curatorBadDebtUsd = (Number(mkt.totalBorrowAssets) / (10 ** mkt.decimals)) * shareRatio
       if (curatorBadDebtUsd > 100) {
         totalUnrealizedUsd += curatorBadDebtUsd
+        affectedMarkets.push({ marketId: mkt.id, chainId, badDebtUsd: curatorBadDebtUsd })
       }
     }
   }
 
-  return Math.max(0, totalUnrealizedUsd - realizedBadDebtUsd)
+  const netUsd = Math.max(0, totalUnrealizedUsd - realizedBadDebtUsd)
+  return { totalUsd: netUsd, markets: affectedMarkets }
 }
 
 /**
@@ -653,9 +661,10 @@ async function fetchMorphoV2VaultData(
     : totalRealizedBadDebtUsd
 
   // Detect unrealized bad debt: check historical markets on-chain for stuck borrows
-  const unrealizedBadDebtUsd = curatorHistory?.allMarketIds
-    ? await detectUnrealizedBadDebt(curatorHistory.allMarketIds, curatorHistory.allVaultAddresses, realizedBadDebtUsd).catch(() => 0)
-    : 0
+  const unrealizedResult = curatorHistory?.allMarketIds
+    ? await detectUnrealizedBadDebt(curatorHistory.allMarketIds, curatorHistory.allVaultAddresses, realizedBadDebtUsd).catch(() => ({ totalUsd: 0, markets: [] }))
+    : { totalUsd: 0, markets: [] }
+  const unrealizedBadDebtUsd = unrealizedResult.totalUsd
 
   const historicalBadDebtUsd = realizedBadDebtUsd + unrealizedBadDebtUsd
 
@@ -776,9 +785,10 @@ export async function fetchMorphoVaultData(
     : curatorData?.totalRealizedBadDebtUsd ?? badDebt
 
   // Detect unrealized bad debt on-chain
-  const unrealizedBadDebtUsd = curatorHistory?.allMarketIds
-    ? await detectUnrealizedBadDebt(curatorHistory.allMarketIds, curatorHistory.allVaultAddresses, realizedBadDebtUsd).catch(() => 0)
-    : 0
+  const unrealizedResult = curatorHistory?.allMarketIds
+    ? await detectUnrealizedBadDebt(curatorHistory.allMarketIds, curatorHistory.allVaultAddresses, realizedBadDebtUsd).catch(() => ({ totalUsd: 0, markets: [] }))
+    : { totalUsd: 0, markets: [] }
+  const unrealizedBadDebtUsd = unrealizedResult.totalUsd
   const historicalBadDebtUsd = realizedBadDebtUsd + unrealizedBadDebtUsd
 
   const placeholderFields: string[] = [
