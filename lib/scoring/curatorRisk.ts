@@ -55,11 +55,10 @@ export function scoreCuratorRisk(vault: VaultData): DimensionScore {
     note: vault.timelockHours === 0 ? 'No delay — parameter changes take effect immediately, no time to exit' : undefined,
   })
 
-  // 4. Track record & past losses (merged)
-  const trackScore = vault.incidentCount === 0 ? 0 : vault.incidentCount === 1 ? 15 : 30
+  // 4. Track record — scored by bad debt amount only (incident count is derived from same data)
   const bd = vault.historicalBadDebtUsd
   const badDebtScore = bd === -1 ? 0 : bd <= 10 ? 0 : bd <= 1_000 ? 5 : bd <= 50_000 ? 20 : 50
-  score += trackScore + badDebtScore
+  score += badDebtScore
 
   const fmtBd = bd === -1 ? 'no data'
     : bd <= 10 ? '$0 bad debt'
@@ -68,9 +67,7 @@ export function scoreCuratorRisk(vault: VaultData): DimensionScore {
   const trackValue = `${vault.vaultsManaged} vault(s) · ${vault.incidentCount} incident(s) · ${fmtBd}`
 
   const trackStatus: 'good' | 'ok' | 'caution' | 'bad' =
-    bd > 50_000 || vault.incidentCount >= 2 ? 'bad'
-    : bd > 1_000 || vault.incidentCount === 1 ? 'caution'
-    : bd > 10 ? 'ok' : 'good'
+    bd > 50_000 ? 'bad' : bd > 1_000 ? 'caution' : bd > 10 ? 'ok' : 'good'
 
   const trackNote = bd > 50_000 ? 'Significant bad debt — depositors have lost money in past events'
     : bd > 1_000 ? 'Moderate bad debt — liquidation system struggled in at least one event'
@@ -80,7 +77,7 @@ export function scoreCuratorRisk(vault: VaultData): DimensionScore {
     name: 'Track record',
     desc: 'Past management history and bad debt across all markets this curator has ever managed. On-chain data (immutable). Shared markets may attribute the same bad debt to multiple curators.',
     value: trackValue,
-    contribution: trackScore + badDebtScore,
+    contribution: badDebtScore,
     status: trackStatus,
     note: trackNote,
     link: (vault.incidentCount > 0 || bd > 10) ? `/curator/${vault.curatorAddress}` : undefined,
