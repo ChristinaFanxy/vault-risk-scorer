@@ -6,10 +6,7 @@ export interface MorphoV2Data {
   name: string
   tvlUsd: number
   currentApyPct: number
-  apy7dAvg: number | null   // 7-day rolling avg from daily history
-  apy30dAvg: number | null  // 30-day rolling avg
-  apy90dAvg: number | null  // 90-day rolling avg
-  apyHistory: Array<{ timestamp: number; apyPct: number }>
+  deployedAt: number | null  // unix ms
 
   curatorAddress: string    // owner address (V2 has no separate curator field)
   curatorName: string | null
@@ -37,10 +34,8 @@ export interface MorphoV2Data {
 export interface MorphoYieldData {
   tvlUsd: number
   currentApyPct: number
-  apy7dAvg: number | null
-  apy30dAvg: number | null
-  apy90dAvg: number | null
-  apyHistory: Array<{ timestamp: number; apyPct: number }>
+  performanceFeePct: number | null
+  deployedAt: number | null  // unix ms
 }
 
 export interface MorphoCuratorData {
@@ -90,13 +85,9 @@ const VAULT_YIELD_QUERY = `
       state {
         totalAssetsUsd
         netApy
+        fee
       }
-      historicalState {
-        dailyNetApy { x y }
-        weeklyNetApy { x y }
-        monthlyNetApy { x y }
-        quarterlyNetApy { x y }
-      }
+      creationTimestamp
     }
   }
 `
@@ -185,7 +176,7 @@ const VAULTS_BY_CURATOR_QUERY = `
 const VAULT_V2_QUERY = `
   query VaultV2($address: String!, $chainId: Int!) {
     vault: vaultV2ByAddress(address: $address, chainId: $chainId) {
-      address name totalAssetsUsd netApy avgNetApy
+      address name totalAssetsUsd netApy avgNetApy creationTimestamp
       owner { address }
       curators { items { name verified addresses { address } } }
       warnings { type level }
@@ -212,7 +203,6 @@ const VAULT_V2_QUERY = `
           }
         }
       }}
-      historicalState { avgNetApy { x y } }
     }
   }
 `
@@ -271,8 +261,6 @@ export async function fetchMorphoV2Data(
       adapter?: { metaMorpho?: { address: string } }
     }
   }
-  type Point = { x: number; y: number | null }
-
   const { vault } = await gql<{
     vault: {
       address: string
@@ -280,12 +268,12 @@ export async function fetchMorphoV2Data(
       totalAssetsUsd: number
       netApy: number
       avgNetApy: number | null
+      creationTimestamp: number | null
       owner: { address: string }
       curators: { items: Array<{ name: string; verified: boolean; addresses: Array<{ address: string }> }> }
       warnings: Array<{ type: string; level: string }>
       timelocks: Array<{ selector: string; functionName: string; duration: number }>
       caps: { items: Cap[] }
-      historicalState: { avgNetApy: Point[] }
     }
   }>(VAULT_V2_QUERY, { address: vaultAddress, chainId })
 
@@ -301,11 +289,11 @@ export async function fetchMorphoV2Data(
   const [v1Vaults, v2Vaults] = await Promise.all([
     gql<{ byCurator: VaultItems; byOwner: VaultItems }>(
       VAULTS_BY_CURATOR_QUERY,
-      { curatorAddresses, chainIds: [1, 8453] }
+      { curatorAddresses, chainIds: [1, 8453, 42161] }
     ).then(r => [...r.byCurator.items, ...r.byOwner.items].map(v => v.address.toLowerCase())).catch(() => [] as string[]),
     gql<{ byCurator: VaultItems; byOwner: VaultItems }>(
       V2_VAULTS_BY_CURATOR_QUERY,
-      { curatorAddresses, chainIds: [1, 8453] }
+      { curatorAddresses, chainIds: [1, 8453, 42161] }
     ).then(r => [...r.byCurator.items, ...r.byOwner.items].map(v => v.address.toLowerCase())).catch(() => [] as string[]),
   ])
   const vaultsManaged = Math.max(1, new Set([...v1Vaults, ...v2Vaults]).size)
@@ -354,21 +342,6 @@ export async function fetchMorphoV2Data(
     c => c.type === 'Adapter' && !c.data.adapter?.metaMorpho?.address
   )
 
-  // APY history from daily avgNetApy points (V2 only has this one series)
-  const rawHistory = vault.historicalState.avgNetApy
-    .filter(p => p.y !== null)
-    .map(p => ({ timestamp: p.x * 1000, apyPct: (p.y as number) * 100 }))
-    .sort((a, b) => a.timestamp - b.timestamp)
-
-  // Derive rolling averages from history
-  const now = Date.now()
-  const avgOver = (days: number) => {
-    const cutoff = now - days * 86400 * 1000
-    const pts = rawHistory.filter(p => p.timestamp >= cutoff)
-    if (pts.length === 0) return null
-    return pts.reduce((s, p) => s + p.apyPct, 0) / pts.length
-  }
-
   // Calculate weighted utilization from ALL market sources (MarketV1 caps + MetaMorpho adapters)
   const allMarketsWithState = [
     ...marketV1Markets.map((m, i) => ({
@@ -392,10 +365,7 @@ export async function fetchMorphoV2Data(
     name: vault.name,
     tvlUsd: vault.totalAssetsUsd,
     currentApyPct: vault.netApy * 100,
-    apy7dAvg: avgOver(7),
-    apy30dAvg: avgOver(30),
-    apy90dAvg: avgOver(90),
-    apyHistory: rawHistory,
+    deployedAt: vault.creationTimestamp ? vault.creationTimestamp * 1000 : null,
     curatorAddress: vault.owner.address,
     curatorName: primaryCurator?.name ?? null,
     curatorVerified: primaryCurator?.verified ?? false,
@@ -507,41 +477,18 @@ export async function fetchMorphoYieldData(
   vaultAddress: string,
   chainId: number
 ): Promise<MorphoYieldData> {
-  type Point = { x: number; y: number | null }
   const { vault } = await gql<{
     vault: {
-      state: { totalAssetsUsd: number; netApy: number }
-      historicalState: {
-        dailyNetApy: Point[]
-        weeklyNetApy: Point[]
-        monthlyNetApy: Point[]
-        quarterlyNetApy: Point[]
-      }
+      state: { totalAssetsUsd: number; netApy: number; fee: number | null }
+      creationTimestamp: number | null
     }
   }>(VAULT_YIELD_QUERY, { address: vaultAddress, chainId })
-
-  const toHistory = (pts: Point[]) =>
-    pts
-      .filter(p => p.y !== null)
-      .map(p => ({ timestamp: p.x * 1000, apyPct: (p.y as number) * 100 }))
-      .sort((a, b) => a.timestamp - b.timestamp)
-
-  // Use daily for recent, fall back to weekly, then quarterly for older points
-  const history = toHistory(vault.historicalState.quarterlyNetApy)
-
-  // 7d avg from weeklyNetApy latest point, 30d/90d from monthly/quarterly
-  const latest = (pts: Point[]) => pts.filter(p => p.y !== null).at(-1)?.y ?? null
-  const apy7d = latest(vault.historicalState.weeklyNetApy)
-  const apy30d = latest(vault.historicalState.monthlyNetApy)
-  const apy90d = latest(vault.historicalState.quarterlyNetApy)
 
   return {
     tvlUsd: vault.state.totalAssetsUsd,
     currentApyPct: vault.state.netApy * 100,
-    apy7dAvg: apy7d !== null ? apy7d * 100 : null,
-    apy30dAvg: apy30d !== null ? apy30d * 100 : null,
-    apy90dAvg: apy90d !== null ? apy90d * 100 : null,
-    apyHistory: history,
+    performanceFeePct: vault.state.fee !== null ? vault.state.fee * 100 : null,
+    deployedAt: vault.creationTimestamp ? vault.creationTimestamp * 1000 : null,
   }
 }
 
@@ -627,11 +574,11 @@ export async function fetchMorphoCuratorData(
   const [v1VaultAddrs, v2VaultAddrs, curatorBorrowsFromVault] = await Promise.all([
     gql<{ byCurator: VaultItems; byOwner: VaultItems }>(
       VAULTS_BY_CURATOR_QUERY,
-      { curatorAddresses: allCuratorAddresses, chainIds: [1, 8453] }
+      { curatorAddresses: allCuratorAddresses, chainIds: [1, 8453, 42161] }
     ).then(r => [...r.byCurator.items, ...r.byOwner.items].map(v => v.address.toLowerCase())).catch(() => [] as string[]),
     gql<{ byCurator: VaultItems; byOwner: VaultItems }>(
       V2_VAULTS_BY_CURATOR_QUERY,
-      { curatorAddresses: allCuratorAddresses, chainIds: [1, 8453] }
+      { curatorAddresses: allCuratorAddresses, chainIds: [1, 8453, 42161] }
     ).then(r => [...r.byCurator.items, ...r.byOwner.items].map(v => v.address.toLowerCase())).catch(() => [] as string[]),
 
     marketKeys.length > 0

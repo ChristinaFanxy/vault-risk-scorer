@@ -1,13 +1,12 @@
 import { Suspense } from 'react'
 import { notFound } from 'next/navigation'
-import { SkeletonCard } from '@/components/SkeletonCard'
 import { fetchMorphoVaultData } from '@/lib/scoring/protocols/morpho'
 import { scoreVault } from '@/lib/scoring/composite'
 import featuredVaults from '@/data/featured-vaults.json'
 import type { ChainId } from '@/lib/scoring/types'
 import { VaultDetailView } from './VaultDetailView'
 
-const SUPPORTED: ChainId[] = [1, 8453]
+const SUPPORTED: ChainId[] = [1, 8453, 42161]
 
 async function VaultContent({ chainId, address }: { chainId: string; address: string }) {
   const cid = parseInt(chainId) as ChainId
@@ -55,11 +54,11 @@ export default function VaultPage({ params }: { params: { chainId: string; addre
   return (
     <main className="min-h-screen bg-brand-bg text-brand-cream p-8">
       <Suspense fallback={
-        <div className="max-w-3xl mx-auto flex flex-col gap-4">
-          <SkeletonCard rows={2} />
-          <SkeletonCard rows={5} />
-          <SkeletonCard rows={5} />
-          <SkeletonCard rows={5} />
+        <div className="min-h-[60vh] flex items-center justify-center">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-10 h-10 border-4 border-brand-border border-t-brand-cream rounded-full animate-spin" />
+            <p className="text-brand-cream text-lg font-medium">Loading vault data...</p>
+          </div>
         </div>
       }>
         <VaultContent chainId={params.chainId} address={params.address} />

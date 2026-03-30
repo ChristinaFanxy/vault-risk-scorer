@@ -9,11 +9,11 @@ export default function HomePage() {
 
   return (
     <main className="min-h-screen bg-brand-bg text-brand-cream flex flex-col items-center px-6 py-16">
-      <h1 className="text-4xl font-bold mb-2">{t.title}</h1>
-      <p className="text-brand-light text-lg mb-2 text-center max-w-xl">
+      <h1 className="text-3xl font-bold mb-3">{t.title}</h1>
+      <p className="text-brand-light text-base mb-2 text-center max-w-xl">
         {t.subtitle}
       </p>
-      <p className="text-brand-light/60 text-sm mb-10 text-center max-w-xl">
+      <p className="text-brand-light text-sm mb-10 text-center max-w-xl">
         {t.chainNotice}
       </p>
 

@@ -10,13 +10,13 @@ const config: Config = {
     extend: {
       colors: {
         brand: {
-          DEFAULT: '#A98B76',
-          light: '#BFA28C',
-          cream: '#F3E4C9',
-          olive: '#BABF94',
-          bg: '#1a1610',
-          card: '#2a231c',
-          border: '#3d3229',
+          DEFAULT: '#87B6BC',
+          light: '#5c6b5e',
+          cream: '#2d2a24',
+          olive: '#B35656',
+          bg: '#F6F09F',
+          card: '#e8f0eb',
+          border: '#b5c9ba',
         },
       },
     },

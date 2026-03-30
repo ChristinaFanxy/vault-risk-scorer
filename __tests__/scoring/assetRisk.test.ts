@@ -5,7 +5,7 @@ import type { VaultData } from '@/lib/scoring/types'
 const baseVault: VaultData = {
   address: '0x1234', chainId: 1, protocol: 'morpho', name: 'Test Vault',
   tvlUsd: 10_000_000, currentApyPct: 5,
-  apy7dAvg: 5, apy30dAvg: 5, apy90dAvg: 5, apyHistory: [],
+  performanceFeePct: 10, deployedAt: 1700000000000,
   assets: [{
     address: '0xasset', symbol: 'USDC',
     assetClass: 'stablecoin', oracleType: 'chainlink',
@@ -45,14 +45,14 @@ describe('scoreAssetRisk', () => {
     expect(scoreAssetRisk(custom).score).toBeGreaterThan(scoreAssetRisk(baseVault).score)
   })
 
-  it('penalizes >50% single-asset concentration in multi-asset vault', () => {
-    const concentrated = {
+  it('penalizes long-tail dominant asset in multi-asset vault', () => {
+    const risky = {
       ...baseVault,
       assets: [
-        { ...baseVault.assets[0], vaultWeightPct: 80 },
-        { ...baseVault.assets[0], symbol: 'DAI', vaultWeightPct: 20 },
+        { ...baseVault.assets[0], symbol: 'SHIB', assetClass: 'long-tail' as const, volatility30d: 0.30, vaultWeightPct: 80 },
+        { ...baseVault.assets[0], symbol: 'USDC', vaultWeightPct: 20 },
       ],
     }
-    expect(scoreAssetRisk(concentrated).score).toBeGreaterThan(scoreAssetRisk(baseVault).score)
+    expect(scoreAssetRisk(risky).score).toBeGreaterThan(scoreAssetRisk(baseVault).score)
   })
 })

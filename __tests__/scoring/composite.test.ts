@@ -15,13 +15,13 @@ describe('scoreToGrade', () => {
 })
 
 describe('computeCompositeScore', () => {
-  it('weights dimensions 40/35/25', () => {
-    // 100×0.4 + 0×0.35 + 0×0.25 = 40
+  it('weights dimensions asset=60% curator=40%', () => {
+    // 100×0.60 + 0×0.40 = 60
     expect(computeCompositeScore(
       { score: 100, indicators: [] },
       { score: 0, indicators: [] },
       { score: 0, indicators: [] },
-    )).toBe(40)
+    )).toBe(60)
   })
 
   it('returns 50 when all dimensions score 50', () => {
@@ -37,8 +37,7 @@ describe('scoreVault', () => {
   const vault: VaultData = {
     address: '0x1234', chainId: 1, protocol: 'morpho', name: 'Test',
     tvlUsd: 5_000_000, currentApyPct: 4.5,
-    apy7dAvg: 4.5, apy30dAvg: 4.5, apy90dAvg: 4.5,
-    apyHistory: [{ timestamp: 1, apyPct: 4.5 }, { timestamp: 2, apyPct: 4.5 }],
+    performanceFeePct: 10, deployedAt: 1700000000000,
     assets: [{ address: '0xa', symbol: 'USDC', assetClass: 'stablecoin', oracleType: 'chainlink', liquidityDepthUsd: 50_000_000, volatility30d: 0.001, vaultWeightPct: 100 }],
     weightedUtilization: 0, totalMarketLiquidityUsd: 100_000_000,
     maxLtvPct: 80, liquidationThresholdPct: 90, liquidationBonusPct: 8,

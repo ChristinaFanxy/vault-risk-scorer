@@ -1,6 +1,6 @@
 // lib/scoring/types.ts
 
-export type ChainId = 1 | 8453  // 1 = Ethereum mainnet, 8453 = Base
+export type ChainId = 1 | 8453 | 42161  // 1 = Ethereum mainnet, 8453 = Base, 42161 = Arbitrum One
 
 export type AssetClass = 'stablecoin' | 'blue-chip' | 'long-tail'
 export type OracleType = 'chainlink' | 'uniswap-twap' | 'custom'
@@ -15,13 +15,11 @@ export interface VaultData {
   protocol: 'morpho'
   name: string
 
-  // TVL + Yield (from DefiLlama)
+  // TVL + Yield
   tvlUsd: number
   currentApyPct: number
-  apy7dAvg: number | null
-  apy30dAvg: number | null
-  apy90dAvg: number | null
-  apyHistory: Array<{ timestamp: number; apyPct: number }>
+  performanceFeePct: number | null  // e.g. 10 = 10%, null = unavailable
+  deployedAt: number | null         // unix ms, null = unavailable
 
   // Underlying assets
   assets: Array<{
@@ -93,11 +91,8 @@ export interface CompositeScore {
   liquidationRisk: DimensionScore
   curatorRisk: DimensionScore
   currentApyPct: number
-  apy7dAvg: number | null
-  apy30dAvg: number | null
-  apy90dAvg: number | null
-  apyStabilityLabel: 'Stable' | 'Volatile'
-  apyHistory: Array<{ timestamp: number; apyPct: number }>
+  performanceFeePct: number | null
+  deployedAt: number | null
   /** Indicator names that used estimated/placeholder data */
   placeholderFields: string[]
   dataFreshnessMs: number

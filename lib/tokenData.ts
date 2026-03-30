@@ -7,6 +7,7 @@ const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 const DEFILLAMA_CHAIN: Record<number, string> = {
   1: 'ethereum',
   8453: 'base',
+  42161: 'arbitrum',
 }
 
 /**

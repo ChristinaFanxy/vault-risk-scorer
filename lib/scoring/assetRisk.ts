@@ -139,7 +139,7 @@ export function scoreAssetRisk(vault: VaultData): DimensionScore {
   const withdrawValue = util >= 0.99 && liqRatio < 0.01
     ? `${utilPct}% utilized — vault is effectively frozen`
     : util >= 0.95 ? `${utilPct}% utilized — withdrawal may fail`
-    : `${utilPct}% utilized · $${(mktLiq / 1000).toFixed(0)}K available`
+    : `${utilPct}% utilized · ${mktLiq >= 1_000_000 ? `$${(mktLiq / 1_000_000).toFixed(1)}M` : `$${(mktLiq / 1000).toFixed(0)}K`} available`
   indicators.push({
     name: 'Vault withdrawability',
     desc: 'How much of the vault\'s deposits are currently borrowed out. At 100% utilization, no funds are available to withdraw — your deposit is locked until borrowers repay.',

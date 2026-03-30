@@ -3,7 +3,7 @@
 import { NextResponse } from 'next/server'
 
 const MORPHO_API = 'https://blue-api.morpho.org/graphql'
-const SUPPORTED_CHAINS = [1, 8453]
+const SUPPORTED_CHAINS = [1, 8453, 42161]
 
 const DETECT_QUERY = `
   query DetectChain($addresses: [String!]!) {
@@ -53,7 +53,7 @@ export async function GET(
     const uniqueChainIds = [...new Set(allChainIds)]
 
     if (uniqueChainIds.length === 0) {
-      return NextResponse.json({ error: 'Vault not found on supported chains (Ethereum, Base)' }, { status: 404 })
+      return NextResponse.json({ error: 'Vault not found on supported chains (Ethereum, Base, Arbitrum)' }, { status: 404 })
     }
 
     return NextResponse.json({

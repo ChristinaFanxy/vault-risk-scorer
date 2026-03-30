@@ -5,7 +5,7 @@ import { scoreVault } from '@/lib/scoring/composite'
 import featuredVaults from '@/data/featured-vaults.json'
 import type { ChainId } from '@/lib/scoring/types'
 
-const SUPPORTED_CHAIN_IDS: ChainId[] = [1, 8453]
+const SUPPORTED_CHAIN_IDS: ChainId[] = [1, 8453, 42161]
 
 export async function GET(
   _req: Request,

@@ -7,7 +7,7 @@ import { YieldCard } from '@/components/YieldCard'
 import { CollapsibleCard } from '@/components/CollapsibleCard'
 import type { CompositeScore } from '@/lib/scoring/types'
 
-const CHAIN_NAMES: Record<number, string> = { 1: 'Ethereum', 8453: 'Base' }
+const CHAIN_NAMES: Record<number, string> = { 1: 'Ethereum', 8453: 'Base', 42161: 'Arbitrum' }
 
 interface VaultDetailViewProps {
   score: CompositeScore
@@ -25,8 +25,8 @@ export function VaultDetailView({ score, address, chainId }: VaultDetailViewProp
   return (
     <div className="max-w-3xl mx-auto">
       {/* Back link */}
-      <div className="mb-4">
-        <a href="/" className="text-brand hover:text-brand-cream text-sm">
+      <div className="mb-6">
+        <a href="/" className="text-brand-cream hover:text-brand text-sm font-medium">
           {t.backToSearch}
         </a>
       </div>
@@ -35,40 +35,32 @@ export function VaultDetailView({ score, address, chainId }: VaultDetailViewProp
       <div className="flex items-start justify-between mb-8 gap-4 flex-wrap">
         <div>
           <div className="flex gap-2 mb-2">
-            <span className="bg-indigo-900 text-brand-cream text-xs px-2 py-1 rounded">Morpho</span>
-            <span className="bg-brand-card text-brand-cream text-xs px-2 py-1 rounded">
+            <span className="bg-brand-cream text-brand-bg text-sm px-2.5 py-0.5 rounded font-medium">Morpho</span>
+            <span className="bg-brand-card text-brand-cream text-sm px-2.5 py-0.5 rounded border border-brand-border">
               {CHAIN_NAMES[chainId] ?? `Chain ${chainId}`}
             </span>
           </div>
-          <h1 className="text-xl font-bold text-brand-cream break-all">{score.name || address}</h1>
+          <h1 className="text-2xl font-bold text-brand-cream">{score.name || address}</h1>
           <p className="text-brand-light text-sm mt-1 font-mono">{address}</p>
-          <div className="flex gap-4 mt-2 text-sm">
-            <span className="text-brand-light">TVL: <span className="text-brand-cream font-medium">{tvlFormatted}</span></span>
-            <span className="text-brand-light">
-              APY: <span className="text-brand-cream font-medium">{score.currentApyPct.toFixed(2)}%</span>
-              {' · '}
-              <span className={score.apyStabilityLabel === 'Stable' ? 'text-green-400' : 'text-yellow-400'}>
-                {score.apyStabilityLabel}
-              </span>
-            </span>
+          <div className="flex gap-6 mt-3 text-base">
+            <span className="text-brand-light">TVL: <span className="text-brand-cream font-semibold">{tvlFormatted}</span></span>
+            <span className="text-brand-light">APY: <span className="text-brand-cream font-semibold">{score.currentApyPct.toFixed(2)}%</span></span>
           </div>
         </div>
         <RiskGrade grade={score.grade} score={score.overallScore} label={score.label} size="lg" />
       </div>
 
-      {/* 4 collapsible cards */}
+      {/* Cards */}
       <div className="flex flex-col gap-4">
         <CollapsibleCard
           title={t.yield}
-          subtitle={`${score.currentApyPct.toFixed(2)}% APY · ${score.apyStabilityLabel}`}
+          subtitle={`${score.currentApyPct.toFixed(2)}% APY`}
           defaultOpen
         >
           <YieldCard
             currentApyPct={score.currentApyPct}
-            apy7dAvg={score.apy7dAvg}
-            apy30dAvg={score.apy30dAvg}
-            apy90dAvg={score.apy90dAvg}
-            apyStabilityLabel={score.apyStabilityLabel}
+            performanceFeePct={score.performanceFeePct}
+            deployedAt={score.deployedAt}
           />
         </CollapsibleCard>
 
@@ -113,9 +105,9 @@ export function VaultDetailView({ score, address, chainId }: VaultDetailViewProp
       </div>
 
       {/* Footer */}
-      <div className="mt-8 text-xs text-brand-light/60 border-t border-brand-border pt-4">
+      <div className="mt-8 text-sm text-brand-light border-t border-brand-border pt-4">
         <p>Data sources: DefiLlama API · The Graph Morpho subgraph · Alchemy RPC</p>
-        <p>Last updated: {new Date(score.dataFreshnessMs).toLocaleString()}</p>
+        <p>Last updated: {new Date(score.dataFreshnessMs).toISOString().replace('T', ' ').slice(0, 19)} UTC</p>
         <p className="mt-2">{t.disclaimer}</p>
       </div>
     </div>

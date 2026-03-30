@@ -7,6 +7,7 @@ import type { ChainId } from '@/lib/scoring/types'
 const MORPHO_SUBGRAPH: Record<ChainId, string | undefined> = {
   1: process.env.MORPHO_SUBGRAPH_MAINNET,
   8453: process.env.MORPHO_SUBGRAPH_BASE,
+  42161: process.env.MORPHO_SUBGRAPH_ARBITRUM,
 }
 
 // Step 1: Find all market IDs ever associated with a curator's MetaMorpho vaults.
@@ -88,7 +89,7 @@ async function subgraphQuery<T>(
   return json.data as T
 }
 
-const ALL_CHAINS: ChainId[] = [1, 8453]
+const ALL_CHAINS: ChainId[] = [1, 8453, 42161]
 
 /**
  * Queries a single chain's subgraph for curator vault/market/bad-debt data.

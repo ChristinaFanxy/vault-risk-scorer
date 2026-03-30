@@ -3,12 +3,16 @@
 @tailwind utilities;
 
 :root {
-  --background: #1a1610;
-  --foreground: #F3E4C9;
+  --background: #F6F09F;
+  --foreground: #2d2a24;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'DM Sans', 'Helvetica Neue', 'Arial', sans-serif;
+}
+
+.font-mono {
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
 }

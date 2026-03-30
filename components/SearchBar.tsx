@@ -11,7 +11,6 @@ export function SearchBar() {
   const { t } = useLanguage()
 
   function extractAddress(input: string): string | null {
-    // Pure address: 0x followed by 40 hex chars
     const addrMatch = input.match(/0x[0-9a-fA-F]{40}/)
     if (addrMatch) return addrMatch[0]
     return null
@@ -59,18 +58,18 @@ export function SearchBar() {
           value={address}
           onChange={e => { setAddress(e.target.value); setStatus('idle'); setErrorMsg('') }}
           placeholder={t.searchPlaceholder}
-          className="flex-1 bg-brand-card border border-brand-border text-brand-cream px-4 py-3 rounded-lg placeholder-brand-light/50 focus:outline-none focus:border-brand"
+          className="flex-1 bg-brand-card border border-brand-border text-brand-cream text-base px-4 py-3 rounded-lg placeholder-brand-light focus:outline-none focus:border-brand"
         />
         <button
           type="submit"
           disabled={status === 'detecting'}
-          className="bg-brand hover:bg-brand-light disabled:bg-brand/50 disabled:cursor-not-allowed text-brand-cream px-6 py-3 rounded-lg font-medium transition-colors min-w-[100px]"
+          className="bg-brand-cream hover:bg-brand-cream/90 disabled:bg-brand-cream/50 disabled:cursor-not-allowed text-brand-bg text-base px-6 py-3 rounded-lg font-medium transition-colors min-w-[100px]"
         >
           {status === 'detecting' ? t.detecting : t.analyze}
         </button>
       </form>
       {status === 'error' && (
-        <p className="mt-2 text-red-400 text-sm">{errorMsg}</p>
+        <p className="mt-2 text-brand-olive text-sm">{errorMsg}</p>
       )}
     </div>
   )

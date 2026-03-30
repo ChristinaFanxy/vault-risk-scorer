@@ -5,7 +5,7 @@ import type { VaultData } from '@/lib/scoring/types'
 const safeVault: VaultData = {
   address: '0x1234', chainId: 1, protocol: 'morpho', name: 'Safe',
   tvlUsd: 10_000_000, currentApyPct: 5,
-  apy7dAvg: 5, apy30dAvg: 5, apy90dAvg: 5, apyHistory: [], assets: [],
+  performanceFeePct: 10, deployedAt: 1700000000000, assets: [],
   weightedUtilization: 0, totalMarketLiquidityUsd: 100_000_000,
   maxLtvPct: 75, liquidationThresholdPct: 85,  // 10% buffer
   liquidationBonusPct: 8, liquidationMechanism: 'dutch-auction',
@@ -17,37 +17,30 @@ const safeVault: VaultData = {
 }
 
 describe('scoreLiquidationRisk', () => {
-  it('returns low score for wide buffer + dutch auction + no bad debt', () => {
+  it('returns score 0 with 3 informational indicators (all contribution=0)', () => {
     const result = scoreLiquidationRisk(safeVault)
-    expect(result.score).toBeLessThan(25)
-    expect(result.indicators).toHaveLength(5)
+    expect(result.score).toBe(0)
+    expect(result.indicators).toHaveLength(3)
+    expect(result.indicators.every(i => i.contribution === 0)).toBe(true)
   })
 
-  it('penalizes thin LTV buffer (<5%)', () => {
+  it('includes Safety buffer, Liquidator reward, and Liquidation process', () => {
+    const result = scoreLiquidationRisk(safeVault)
+    const names = result.indicators.map(i => i.name)
+    expect(names).toEqual(['Safety buffer', 'Liquidator reward', 'Liquidation process'])
+  })
+
+  it('shows good status for wide safety buffer (10%)', () => {
+    const result = scoreLiquidationRisk(safeVault)
+    const buffer = result.indicators.find(i => i.name === 'Safety buffer')!
+    expect(buffer.status).toBe('good')
+    expect(buffer.contribution).toBe(0)
+  })
+
+  it('shows bad status for thin safety buffer (<5%)', () => {
     const thin = { ...safeVault, maxLtvPct: 82, liquidationThresholdPct: 85 }
-    expect(scoreLiquidationRisk(thin).score).toBeGreaterThan(scoreLiquidationRisk(safeVault).score)
-  })
-
-  it('penalizes fixed-discount liquidation mechanism', () => {
-    const fixed = { ...safeVault, liquidationMechanism: 'fixed-discount' as const }
-    expect(scoreLiquidationRisk(fixed).score).toBeGreaterThan(scoreLiquidationRisk(safeVault).score)
-  })
-
-  it('gives large penalty for historical bad debt', () => {
-    const badDebt = { ...safeVault, historicalBadDebtUsd: 50_000 }
-    expect(scoreLiquidationRisk(badDebt).score).toBeGreaterThan(scoreLiquidationRisk(safeVault).score + 20)
-  })
-
-  it('shows N/A and no penalty when bad debt data is unavailable (returns -1)', () => {
-    const unknown = { ...safeVault, historicalBadDebtUsd: -1 }
-    const indicator = scoreLiquidationRisk(unknown).indicators.find(i => i.name === 'Historical bad debt')!
-    expect(indicator.value).toBe('N/A')
-    expect(indicator.contribution).toBe(0)
-  })
-
-  it('safe vault with wide buffer scores 0 for LTV buffer indicator', () => {
-    const result = scoreLiquidationRisk(safeVault)
-    const ltvIndicator = result.indicators.find(i => i.name === 'LTV buffer')!
-    expect(ltvIndicator.contribution).toBe(0)  // 10% buffer → 0 points
+    const result = scoreLiquidationRisk(thin)
+    const buffer = result.indicators.find(i => i.name === 'Safety buffer')!
+    expect(buffer.status).toBe('bad')
   })
 })
