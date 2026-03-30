@@ -8,7 +8,7 @@ const CHAIN_LABELS: Record<number, string> = { 1: 'Ethereum', 8453: 'Base' }
 
 function morphoMarketUrl(marketId: string, chainId: number): string {
   const network = chainId === 8453 ? 'base' : 'ethereum'
-  return `https://app.morpho.org/market?id=${marketId}&network=${network}`
+  return `https://app.morpho.org/${network}/market/${marketId}`
 }
 
 function fmtUsd(n: number): string {
