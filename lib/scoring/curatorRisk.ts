@@ -64,6 +64,7 @@ export function scoreCuratorRisk(vault: VaultData): DimensionScore {
     value: `${vault.vaultsManaged} vault(s) managed · ${vault.incidentCount} incident(s)`,
     contribution: trackScore,
     status: vault.incidentCount === 0 ? 'good' : vault.incidentCount === 1 ? 'caution' : 'bad',
+    link: vault.incidentCount > 0 ? `/curator/${vault.curatorAddress}` : undefined,
   })
 
   // 5. Past protocol losses — tiered by severity
@@ -101,6 +102,7 @@ export function scoreCuratorRisk(vault: VaultData): DimensionScore {
     contribution: badDebtScore,
     status: badDebtStatus,
     note: badDebtNote,
+    link: bd > 10 ? `/curator/${vault.curatorAddress}` : undefined,
   })
 
   // 6. Conflicts of interest

@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import type { DimensionScore } from '@/lib/scoring/types'
 
 interface Props {
@@ -60,6 +61,11 @@ export function RiskDimensionCard({ dimensionScore, weightPct, placeholderFields
               )}
               {ind.note && (
                 <p className="text-xs text-yellow-400 mt-1">⚠ {ind.note}</p>
+              )}
+              {ind.link && (
+                <Link href={ind.link} className="text-xs text-indigo-400 hover:text-indigo-300 mt-1 inline-block">
+                  View details →
+                </Link>
               )}
             </div>
             {/* Right: value + score */}

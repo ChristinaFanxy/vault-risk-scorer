@@ -45,6 +45,12 @@ const ALL_BAD_DEBT_QUERY = `
   }
 `
 
+export interface BadDebtEvent {
+  marketId: string
+  badDebtUsd: number
+  chainId: ChainId
+}
+
 export interface CuratorBadDebtHistory {
   /** Total bad debt USD across all markets the curator has ever managed */
   totalBadDebtUsd: number
@@ -54,6 +60,8 @@ export interface CuratorBadDebtHistory {
   affectedMarketCount: number
   /** Number of vaults the curator has managed (including closed ones) */
   historicalVaultCount: number
+  /** Individual bad debt events with market ID, amount, and chain */
+  events: BadDebtEvent[]
 }
 
 async function subgraphQuery<T>(
@@ -85,7 +93,7 @@ const ALL_CHAINS: ChainId[] = [1, 8453]
 async function fetchCuratorBadDebtForChain(
   curatorAddresses: string[],
   chainId: ChainId
-): Promise<{ marketIds: Set<string>; vaultIds: Set<string>; totalBadDebtUsd: number; eventCount: number; affectedMarkets: Set<string> } | null> {
+): Promise<{ marketIds: Set<string>; vaultIds: Set<string>; totalBadDebtUsd: number; eventCount: number; affectedMarkets: Set<string>; events: BadDebtEvent[] } | null> {
   type MarketEntry = { market: { id: string }; metaMorpho: { id: string } }
   const marketIds = new Set<string>()
   const vaultIds = new Set<string>()
@@ -115,6 +123,7 @@ async function fetchCuratorBadDebtForChain(
   let totalBadDebtUsd = 0
   let eventCount = 0
   const affectedMarkets = new Set<string>()
+  const events: BadDebtEvent[] = []
   let bdSkip = 0
   while (true) {
     const data = await subgraphQuery<{
@@ -129,6 +138,7 @@ async function fetchCuratorBadDebtForChain(
           totalBadDebtUsd += usd
           eventCount++
           affectedMarkets.add(event.market.id)
+          events.push({ marketId: event.market.id, badDebtUsd: usd, chainId })
         }
       }
     }
@@ -136,7 +146,7 @@ async function fetchCuratorBadDebtForChain(
     bdSkip += 1000
   }
 
-  return { marketIds, vaultIds, totalBadDebtUsd, eventCount, affectedMarkets }
+  return { marketIds, vaultIds, totalBadDebtUsd, eventCount, affectedMarkets, events }
 }
 
 /**
@@ -160,6 +170,7 @@ export async function fetchCuratorBadDebtHistory(
   let eventCount = 0
   const allVaultIds = new Set<string>()
   const allAffectedMarkets = new Set<string>()
+  const allEvents: BadDebtEvent[] = []
   let hasAnyData = false
 
   for (const r of results) {
@@ -169,15 +180,20 @@ export async function fetchCuratorBadDebtHistory(
     eventCount += r.eventCount
     for (const v of r.vaultIds) allVaultIds.add(v)
     for (const m of r.affectedMarkets) allAffectedMarkets.add(m)
+    allEvents.push(...r.events)
   }
 
   if (!hasAnyData) return null
+
+  // Sort by amount descending
+  allEvents.sort((a, b) => b.badDebtUsd - a.badDebtUsd)
 
   return {
     totalBadDebtUsd,
     eventCount,
     affectedMarketCount: allAffectedMarkets.size,
     historicalVaultCount: allVaultIds.size,
+    events: allEvents,
   }
 }
 

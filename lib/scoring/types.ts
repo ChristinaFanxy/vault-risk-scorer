@@ -74,6 +74,7 @@ export interface DimensionScore {
     contribution: number
     status?: 'good' | 'ok' | 'caution' | 'bad'
     note?: string
+    link?: string           // optional internal link for "view details"
   }>
 }
 
