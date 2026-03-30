@@ -121,7 +121,7 @@ async function VaultContent({ chainId, address }: { chainId: string; address: st
             dimensionScore={score.liquidationRisk}
             weightPct={35}
             placeholderFields={score.placeholderFields.filter(f =>
-              ['maxLtvPct', 'liquidationThresholdPct', 'liquidationBonusPct', 'liquidationMechanism'].includes(f)
+              ['maxLtvPct', 'liquidationThresholdPct'].includes(f)
             )}
           />
         </CollapsibleCard>

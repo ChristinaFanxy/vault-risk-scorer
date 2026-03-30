@@ -1,13 +1,29 @@
 // lib/scoring/liquidationRisk.ts
 import type { VaultData, DimensionScore } from './types'
 
+// Morpho Blue liquidation incentive formula constants
+const LIQUIDATION_CURSOR = 0.3
+const MAX_LIQUIDATION_INCENTIVE_FACTOR = 1.15  // 15% cap
+
+/** Compute Morpho Blue liquidation incentive from LLTV */
+function computeLiquidationBonus(lltvPct: number): { bonusPct: number; capped: boolean } {
+  const lltv = lltvPct / 100
+  const cursor = lltv * LIQUIDATION_CURSOR
+  const rawFactor = cursor < 1 ? 1 / (1 - cursor) : Infinity
+  const factor = Math.min(MAX_LIQUIDATION_INCENTIVE_FACTOR, rawFactor)
+  return {
+    bonusPct: (factor - 1) * 100,
+    capped: rawFactor > MAX_LIQUIDATION_INCENTIVE_FACTOR,
+  }
+}
+
 export function scoreLiquidationRisk(vault: VaultData): DimensionScore {
   const indicators: DimensionScore['indicators'] = []
   let score = 0
 
-  // 1. Safety buffer (LTV gap)
+  // 1. Safety buffer (LTV gap) — scores 0-50
   const buffer = vault.liquidationThresholdPct - vault.maxLtvPct
-  const ltvScore = buffer >= 10 ? 0 : buffer >= 7 ? 5 : buffer >= 5 ? 15 : buffer >= 3 ? 25 : 40
+  const ltvScore = buffer >= 10 ? 0 : buffer >= 7 ? 10 : buffer >= 5 ? 20 : buffer >= 3 ? 35 : 50
   score += ltvScore
   const ltvStatus = buffer >= 10 ? 'good' : buffer >= 7 ? 'ok' : buffer >= 5 ? 'caution' : 'bad'
   indicators.push({
@@ -19,38 +35,29 @@ export function scoreLiquidationRisk(vault: VaultData): DimensionScore {
     note: buffer < 5 ? 'Very thin buffer — liquidators may not have enough time to act in volatile markets' : undefined,
   })
 
-  // 2. Liquidator reward
-  const bonusScore = vault.liquidationBonusPct >= 7 ? 0
-    : vault.liquidationBonusPct >= 5 ? 5
-    : vault.liquidationBonusPct >= 3 ? 15
-    : 25
-  score += bonusScore
-  const bonusStatus = vault.liquidationBonusPct >= 7 ? 'good'
-    : vault.liquidationBonusPct >= 5 ? 'ok'
-    : vault.liquidationBonusPct >= 3 ? 'caution' : 'bad'
+  // 2. Liquidator reward — informational only (contribution = 0)
+  // Computed from LLTV using Morpho Blue's on-chain formula
+  const { bonusPct, capped } = computeLiquidationBonus(vault.liquidationThresholdPct)
+  const cappedLabel = capped ? ' (capped)' : ''
   indicators.push({
     name: 'Liquidator reward',
-    desc: 'Bonus paid to bots/traders who close underwater loans. Low reward = slow response = higher chance of bad debt.',
-    value: `${vault.liquidationBonusPct}% profit margin for liquidators`,
-    contribution: bonusScore,
-    status: bonusStatus,
-    note: vault.liquidationBonusPct < 3 ? 'Very low reward — liquidators may not act fast enough' : undefined,
+    desc: `Bonus paid to liquidators. Morpho Blue formula: min(15%, 1/(1 − LLTV×0.3) − 1). Higher reward = faster liquidation response.`,
+    value: `${bonusPct.toFixed(1)}%${cappedLabel} profit margin`,
+    contribution: 0,
+    status: 'ok',
   })
 
-  // 3. Liquidation process
-  const mechScore = vault.liquidationMechanism === 'dutch-auction' ? 0 : 10
-  score += mechScore
-  const mechLabel = vault.liquidationMechanism === 'dutch-auction' ? 'Dutch auction (recommended)' : 'Fixed discount'
+  // 3. Liquidation process — informational only (contribution = 0)
+  // Morpho Blue always uses Dutch auction
   indicators.push({
     name: 'Liquidation process',
     desc: 'How underwater positions get sold. Dutch auction gradually lowers the price until a buyer appears — fairer and more resilient in volatile markets.',
-    value: mechLabel,
-    contribution: mechScore,
-    status: vault.liquidationMechanism === 'dutch-auction' ? 'good' : 'caution',
-    note: vault.liquidationMechanism === 'fixed-discount' ? 'Fixed-discount liquidations can be less effective in fast-moving markets' : undefined,
+    value: 'Dutch auction (Morpho Blue standard)',
+    contribution: 0,
+    status: 'good',
   })
 
-  // 4. Past protocol losses — tiered by severity
+  // 4. Past protocol losses — scores 0-50, tiered by severity
   let badDebtScore = 0
   let badDebtValue: string
   let badDebtStatus: 'good' | 'ok' | 'caution' | 'bad'
@@ -60,7 +67,6 @@ export function scoreLiquidationRisk(vault: VaultData): DimensionScore {
     badDebtValue = 'No data available'
     badDebtStatus = 'ok'
   } else if (bd <= 10) {
-    // < $10 = dust from liquidation rounding, not a real incident
     badDebtValue = 'None — clean record'
     badDebtStatus = 'good'
   } else if (bd <= 1_000) {
@@ -69,12 +75,12 @@ export function scoreLiquidationRisk(vault: VaultData): DimensionScore {
     badDebtStatus = 'ok'
   } else if (bd <= 50_000) {
     badDebtValue = `$${(bd / 1_000).toFixed(1)}K unrecovered`
-    badDebtScore = 15
+    badDebtScore = 20
     badDebtStatus = 'caution'
     badDebtNote = 'Moderate bad debt — liquidation system struggled in at least one event'
   } else {
     badDebtValue = `$${(bd / 1_000).toFixed(1)}K unrecovered`
-    badDebtScore = 30
+    badDebtScore = 50
     badDebtStatus = 'bad'
     badDebtNote = 'Significant bad debt — depositors have lost money in past events'
   }
@@ -86,23 +92,6 @@ export function scoreLiquidationRisk(vault: VaultData): DimensionScore {
     contribution: badDebtScore,
     status: badDebtStatus,
     note: badDebtNote,
-  })
-
-  // 5. Price feed manipulation risk
-  const oracleScore = vault.oracleManipulationSurface === 'low' ? 0
-    : vault.oracleManipulationSurface === 'medium' ? 10
-    : 20
-  score += oracleScore
-  const oracleLabel = vault.oracleManipulationSurface === 'low' ? 'Low — hard to manipulate'
-    : vault.oracleManipulationSurface === 'medium' ? 'Medium — some exposure'
-    : 'High — vulnerable'
-  indicators.push({
-    name: 'Price feed manipulation risk',
-    desc: 'How easy it is for an attacker to fake prices to trigger false liquidations or avoid real ones.',
-    value: oracleLabel,
-    contribution: oracleScore,
-    status: vault.oracleManipulationSurface === 'low' ? 'good'
-      : vault.oracleManipulationSurface === 'medium' ? 'caution' : 'bad',
   })
 
   return { score: Math.min(100, score), indicators }
