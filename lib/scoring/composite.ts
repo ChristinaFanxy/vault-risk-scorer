@@ -4,7 +4,7 @@ import { scoreAssetRisk } from './assetRisk'
 import { scoreLiquidationRisk } from './liquidationRisk'
 import { scoreCuratorRisk } from './curatorRisk'
 
-const WEIGHTS = { asset: 0.40, liquidation: 0.35, curator: 0.25 } as const
+const WEIGHTS = { asset: 0.50, liquidation: 0.20, curator: 0.30 } as const
 
 export function computeCompositeScore(
   asset: DimensionScore,
