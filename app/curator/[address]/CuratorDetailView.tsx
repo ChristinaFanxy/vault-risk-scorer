@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useLanguage, LanguageToggle } from '@/lib/i18n'
+import { useLanguage } from '@/lib/i18n'
 import type { BadDebtEvent } from '@/lib/thegraph'
 
 const CHAIN_LABELS: Record<number, string> = { 1: 'Ethereum', 8453: 'Base' }
@@ -48,11 +48,6 @@ export default function CuratorDetailView({
 
   return (
     <div className="min-h-screen bg-brand-bg text-brand-cream p-6 max-w-4xl mx-auto">
-      {/* Language toggle */}
-      <div className="flex justify-end mb-4">
-        <LanguageToggle />
-      </div>
-
       {/* Header */}
       <div className="mb-8">
         <Link href="/" className="text-brand hover:text-brand-cream text-sm mb-4 inline-block">

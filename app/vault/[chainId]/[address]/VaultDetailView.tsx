@@ -1,7 +1,6 @@
 'use client'
 
 import { useLanguage } from '@/lib/i18n'
-import { LanguageToggle } from '@/lib/i18n'
 import { RiskGrade } from '@/components/RiskGrade'
 import { RiskDimensionCard } from '@/components/RiskDimensionCard'
 import { YieldCard } from '@/components/YieldCard'
@@ -25,12 +24,11 @@ export function VaultDetailView({ score, address, chainId }: VaultDetailViewProp
 
   return (
     <div className="max-w-3xl mx-auto">
-      {/* Top bar with back link and language toggle */}
-      <div className="flex items-center justify-between mb-4">
+      {/* Back link */}
+      <div className="mb-4">
         <a href="/" className="text-brand hover:text-brand-cream text-sm">
           {t.backToSearch}
         </a>
-        <LanguageToggle />
       </div>
 
       {/* Vault header */}
