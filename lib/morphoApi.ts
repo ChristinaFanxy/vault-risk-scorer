@@ -7,6 +7,7 @@ export interface MorphoV2Data {
   tvlUsd: number
   currentApyPct: number
   deployedAt: number | null  // unix ms
+  performanceFeePct: number | null  // e.g. 10 = 10%
 
   curatorAddress: string    // owner address (V2 has no separate curator field)
   curatorName: string | null
@@ -176,7 +177,7 @@ const VAULTS_BY_CURATOR_QUERY = `
 const VAULT_V2_QUERY = `
   query VaultV2($address: String!, $chainId: Int!) {
     vault: vaultV2ByAddress(address: $address, chainId: $chainId) {
-      address name totalAssetsUsd netApy avgNetApy creationTimestamp
+      address name totalAssetsUsd netApy avgNetApy creationTimestamp performanceFee
       owner { address }
       curators { items { name verified addresses { address } } }
       warnings { type level }
@@ -269,6 +270,7 @@ export async function fetchMorphoV2Data(
       netApy: number
       avgNetApy: number | null
       creationTimestamp: number | null
+      performanceFee: number | null
       owner: { address: string }
       curators: { items: Array<{ name: string; verified: boolean; addresses: Array<{ address: string }> }> }
       warnings: Array<{ type: string; level: string }>
@@ -366,6 +368,7 @@ export async function fetchMorphoV2Data(
     tvlUsd: vault.totalAssetsUsd,
     currentApyPct: vault.netApy * 100,
     deployedAt: vault.creationTimestamp ? vault.creationTimestamp * 1000 : null,
+    performanceFeePct: vault.performanceFee !== null ? vault.performanceFee * 100 : null,
     curatorAddress: vault.owner.address,
     curatorName: primaryCurator?.name ?? null,
     curatorVerified: primaryCurator?.verified ?? false,

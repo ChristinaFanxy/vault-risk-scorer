@@ -622,7 +622,7 @@ async function fetchMorphoV2VaultData(
     name: v2.name,
     tvlUsd: v2.tvlUsd,
     currentApyPct: v2.currentApyPct,
-    performanceFeePct: null,  // V2 API doesn't expose fee
+    performanceFeePct: v2.performanceFeePct,
     deployedAt: v2.deployedAt,
     assets,
     weightedUtilization: v2.weightedUtilization,
