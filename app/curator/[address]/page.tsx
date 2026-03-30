@@ -89,7 +89,7 @@ export default async function CuratorPage({
           <h2 className="text-sm font-medium text-orange-400 mb-1">Unrealized Bad Debt Detected</h2>
           <p className="text-xs text-gray-400 leading-relaxed">
             {fmtUsd(unrealizedBadDebtUsd)} in stuck borrows found across historical markets.
-            These are markets with {'>'}95% utilization where this curator&apos;s vaults still have supply positions
+            These are markets with {'>'}97% utilization and less than $10K remaining liquidity where this curator&apos;s vaults still have supply positions
             but borrowers have not repaid. The protocol has not formally &quot;realized&quot; this as bad debt yet,
             but the funds are effectively locked.
           </p>

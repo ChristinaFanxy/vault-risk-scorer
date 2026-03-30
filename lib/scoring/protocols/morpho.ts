@@ -257,7 +257,9 @@ export async function detectUnrealizedBadDebt(
         : 0
       // Quick USD estimate assuming 6 decimals (USDC); refine later for non-stablecoin markets
       const roughBorrowUsd = Number(state.totalBorrowAssets) / 1e6
-      if (roughBorrowUsd > 1000 && utilization > 0.95) {
+      const roughLiquidityUsd = Number(state.totalSupplyAssets - state.totalBorrowAssets) / 1e6
+      // Stuck = >97% utilization AND <$10K remaining liquidity (distinguishes true bad debt from normal high utilization)
+      if (roughBorrowUsd > 1000 && utilization > 0.97 && roughLiquidityUsd < 10_000) {
         stuckMarkets.push({
           id: id as `0x${string}`,
           totalBorrowAssets: state.totalBorrowAssets,
