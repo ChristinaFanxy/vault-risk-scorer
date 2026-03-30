@@ -6,6 +6,7 @@ const safeVault: VaultData = {
   address: '0x1234', chainId: 1, protocol: 'morpho', name: 'Safe',
   tvlUsd: 10_000_000, currentApyPct: 5,
   apy7dAvg: 5, apy30dAvg: 5, apy90dAvg: 5, apyHistory: [], assets: [],
+  weightedUtilization: 0, totalMarketLiquidityUsd: 100_000_000,
   maxLtvPct: 75, liquidationThresholdPct: 85,  // 10% buffer
   liquidationBonusPct: 8, liquidationMechanism: 'dutch-auction',
   historicalBadDebtUsd: 0, oracleManipulationSurface: 'low',

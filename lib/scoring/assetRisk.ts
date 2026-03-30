@@ -115,5 +115,35 @@ export function scoreAssetRisk(vault: VaultData): DimensionScore {
     note: concentrated ? 'Single asset >50% of multi-asset vault' : undefined,
   })
 
+  // 6. Vault withdrawability — can depositors actually exit?
+  const util = vault.weightedUtilization
+  const mktLiq = vault.totalMarketLiquidityUsd
+  const liqRatio = vault.tvlUsd > 0 ? mktLiq / vault.tvlUsd : 1
+  // Scoring: utilization near 100% with no liquidity = catastrophic
+  const withdrawScore = util >= 0.99 && liqRatio < 0.01 ? 50   // fully locked — no exit
+    : util >= 0.95 ? 30                                          // nearly locked
+    : util >= 0.85 ? 15                                          // tight — may face delays
+    : util >= 0.70 ? 5                                           // moderate usage
+    : 0                                                           // healthy
+  score += withdrawScore
+  const utilPct = (util * 100).toFixed(1)
+  const withdrawValue = util >= 0.99 && liqRatio < 0.01
+    ? `${utilPct}% utilized — vault is effectively frozen`
+    : util >= 0.95 ? `${utilPct}% utilized — withdrawal may fail`
+    : `${utilPct}% utilized · $${(mktLiq / 1000).toFixed(0)}K available`
+  indicators.push({
+    name: 'Vault withdrawability',
+    desc: 'How much of the vault\'s deposits are currently borrowed out. At 100% utilization, no funds are available to withdraw — your deposit is locked until borrowers repay.',
+    value: withdrawValue,
+    contribution: withdrawScore,
+    status: util >= 0.99 && liqRatio < 0.01 ? 'bad'
+      : util >= 0.95 ? 'bad'
+      : util >= 0.85 ? 'caution'
+      : util >= 0.70 ? 'ok' : 'good',
+    note: util >= 0.99 && liqRatio < 0.01
+      ? 'All deposited funds are borrowed — withdrawals are blocked until borrowers repay or get liquidated'
+      : undefined,
+  })
+
   return { score: Math.min(100, score), indicators }
 }

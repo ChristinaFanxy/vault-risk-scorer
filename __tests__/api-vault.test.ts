@@ -10,7 +10,7 @@ const mockVault: VaultData = {
   address: '0xbeef', chainId: 1, protocol: 'morpho', name: 'Mock Vault',
   tvlUsd: 1_000_000, currentApyPct: 5,
   apy7dAvg: 5, apy30dAvg: 5, apy90dAvg: 5, apyHistory: [],
-  assets: [], maxLtvPct: 80, liquidationThresholdPct: 85, liquidationBonusPct: 5,
+  assets: [], weightedUtilization: 0, totalMarketLiquidityUsd: 100_000_000, maxLtvPct: 80, liquidationThresholdPct: 85, liquidationBonusPct: 5,
   liquidationMechanism: 'dutch-auction', historicalBadDebtUsd: 0,
   oracleManipulationSurface: 'low',
   curatorName: null, curatorAddress: '0x0', curatorType: 'institution', permissionScope: 'narrow',

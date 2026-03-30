@@ -41,6 +41,10 @@ export interface VaultData {
   liquidationMechanism: LiquidationMechanism
   historicalBadDebtUsd: number  // -1 = unavailable, 0 = none, >0 = bad debt occurred
 
+  // Vault liquidity / withdrawability
+  weightedUtilization: number        // 0-1, weighted avg market utilization
+  totalMarketLiquidityUsd: number    // available (unborrowed) liquidity across markets (USD)
+
   // Oracle
   oracleManipulationSurface: 'low' | 'medium' | 'high'
 

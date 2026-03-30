@@ -6,6 +6,7 @@ const trusted: VaultData = {
   address: '0x1234', chainId: 1, protocol: 'morpho', name: 'Test',
   tvlUsd: 10_000_000, currentApyPct: 5,
   apy7dAvg: 5, apy30dAvg: 5, apy90dAvg: 5, apyHistory: [], assets: [],
+  weightedUtilization: 0, totalMarketLiquidityUsd: 100_000_000,
   maxLtvPct: 80, liquidationThresholdPct: 85, liquidationBonusPct: 5,
   liquidationMechanism: 'dutch-auction', historicalBadDebtUsd: 0,
   oracleManipulationSurface: 'low',

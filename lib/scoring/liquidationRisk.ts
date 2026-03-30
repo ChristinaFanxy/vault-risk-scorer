@@ -50,20 +50,33 @@ export function scoreLiquidationRisk(vault: VaultData): DimensionScore {
     note: vault.liquidationMechanism === 'fixed-discount' ? 'Fixed-discount liquidations can be less effective in fast-moving markets' : undefined,
   })
 
-  // 4. Past protocol losses
+  // 4. Past protocol losses — tiered by severity
   let badDebtScore = 0
   let badDebtValue: string
   let badDebtStatus: 'good' | 'ok' | 'caution' | 'bad'
-  if (vault.historicalBadDebtUsd === -1) {
+  let badDebtNote: string | undefined
+  const bd = vault.historicalBadDebtUsd
+  if (bd === -1) {
     badDebtValue = 'No data available'
     badDebtStatus = 'ok'
-  } else if (vault.historicalBadDebtUsd === 0) {
+  } else if (bd <= 10) {
+    // < $10 = dust from liquidation rounding, not a real incident
     badDebtValue = 'None — clean record'
     badDebtStatus = 'good'
+  } else if (bd <= 1_000) {
+    badDebtValue = `$${bd.toFixed(0)} — minor (likely liquidation dust)`
+    badDebtScore = 5
+    badDebtStatus = 'ok'
+  } else if (bd <= 50_000) {
+    badDebtValue = `$${(bd / 1_000).toFixed(1)}K unrecovered`
+    badDebtScore = 15
+    badDebtStatus = 'caution'
+    badDebtNote = 'Moderate bad debt — liquidation system struggled in at least one event'
   } else {
-    badDebtValue = `$${vault.historicalBadDebtUsd.toLocaleString()} unrecovered`
+    badDebtValue = `$${(bd / 1_000).toFixed(1)}K unrecovered`
     badDebtScore = 30
     badDebtStatus = 'bad'
+    badDebtNote = 'Significant bad debt — depositors have lost money in past events'
   }
   score += badDebtScore
   indicators.push({
@@ -72,7 +85,7 @@ export function scoreLiquidationRisk(vault: VaultData): DimensionScore {
     value: badDebtValue,
     contribution: badDebtScore,
     status: badDebtStatus,
-    note: vault.historicalBadDebtUsd > 0 ? 'Protocol has experienced bad debt — significant risk flag' : undefined,
+    note: badDebtNote,
   })
 
   // 5. Price feed manipulation risk

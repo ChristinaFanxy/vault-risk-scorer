@@ -42,6 +42,7 @@ export interface MorphoYieldData {
 }
 
 export interface MorphoCuratorData {
+  vaultName: string | null           // API display name (more accurate than on-chain name())
   curatorAddress: string
   curatorName: string | null        // e.g. "Steakhouse Financial"
   curatorVerified: boolean          // Morpho-verified curator
@@ -60,10 +61,17 @@ export interface MorphoCuratorData {
 const VAULT_ALLOCATION_QUERY = `
   query VaultAllocation($address: String!, $chainId: Int!) {
     vault: vaultByAddress(address: $address, chainId: $chainId) {
+      liquidity { underlying }
       state {
         allocation {
           supplyAssetsUsd
-          market { uniqueKey }
+          market {
+            uniqueKey
+            lltv
+            collateralAsset { address symbol }
+            oracle { address }
+            state { utilization liquidityAssetsUsd }
+          }
         }
       }
     }
@@ -90,6 +98,7 @@ const VAULT_YIELD_QUERY = `
 const VAULT_CURATOR_QUERY = `
   query VaultCurator($address: String!, $chainId: Int!) {
     vault: vaultByAddress(address: $address, chainId: $chainId) {
+      name
       state {
         curator
         timelock
@@ -328,24 +337,78 @@ export async function fetchMorphoV2Data(
   }
 }
 
-/** Returns a map of marketUniqueKey (lowercase) → this vault's USD allocation to that market */
+export interface VaultMarketAllocation {
+  uniqueKey: string
+  supplyAssetsUsd: number
+  lltv: string
+  collateralAddress: string
+  collateralSymbol: string
+  oracleAddress: string
+  utilization: number            // 0-1, market-level utilization
+  marketLiquidityUsd: number     // available (unborrowed) liquidity in this market
+}
+
+export interface VaultLiquidity {
+  /** Withdrawable underlying token amount (raw, not USD — 0 means fully locked) */
+  underlyingRaw: number
+  /** Weighted avg utilization across this vault's active markets (0-1) */
+  weightedUtilization: number
+  /** Total available market liquidity across all active allocations (USD) */
+  totalMarketLiquidityUsd: number
+}
+
+/** Returns active market allocations for this vault (supplyAssetsUsd > 0), sorted by allocation descending */
 export async function fetchVaultAllocation(
   vaultAddress: string,
   chainId: number
-): Promise<Map<string, number>> {
+): Promise<{ allocations: VaultMarketAllocation[]; liquidity: VaultLiquidity }> {
   const { vault } = await gql<{
     vault: {
+      liquidity: { underlying: number }
       state: {
-        allocation: Array<{ supplyAssetsUsd: number | null; market: { uniqueKey: string } }>
+        allocation: Array<{
+          supplyAssetsUsd: number | null
+          market: {
+            uniqueKey: string
+            lltv: string
+            collateralAsset: { address: string; symbol: string } | null
+            oracle: { address: string }
+            state: { utilization: number | null; liquidityAssetsUsd: number | null }
+          }
+        }>
       }
     }
   }>(VAULT_ALLOCATION_QUERY, { address: vaultAddress, chainId })
 
-  return new Map(
-    vault.state.allocation
-      .filter(a => (a.supplyAssetsUsd ?? 0) > 0)
-      .map(a => [a.market.uniqueKey.toLowerCase(), a.supplyAssetsUsd!])
-  )
+  const allocations = vault.state.allocation
+    .filter(a => (a.supplyAssetsUsd ?? 0) > 0 && a.market.collateralAsset !== null)
+    .map(a => ({
+      uniqueKey: a.market.uniqueKey.toLowerCase(),
+      supplyAssetsUsd: a.supplyAssetsUsd!,
+      lltv: a.market.lltv,
+      collateralAddress: a.market.collateralAsset!.address,
+      collateralSymbol: a.market.collateralAsset!.symbol,
+      oracleAddress: a.market.oracle.address,
+      utilization: a.market.state.utilization ?? 0,
+      marketLiquidityUsd: a.market.state.liquidityAssetsUsd ?? 0,
+    }))
+    .sort((a, b) => b.supplyAssetsUsd - a.supplyAssetsUsd)
+
+  // Compute vault-level liquidity summary
+  const totalAlloc = allocations.reduce((s, a) => s + a.supplyAssetsUsd, 0)
+  const weightedUtilization = totalAlloc > 0
+    ? allocations.reduce((s, a) => s + a.utilization * (a.supplyAssetsUsd / totalAlloc), 0)
+    : 0
+  const totalMarketLiquidityUsd = allocations.reduce((s, a) => s + a.marketLiquidityUsd, 0)
+
+  return {
+    allocations,
+    liquidity: {
+      underlyingRaw: vault.liquidity.underlying,
+      weightedUtilization,
+      totalMarketLiquidityUsd,
+    },
+  }
 }
 
 async function gql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
@@ -423,6 +486,7 @@ export async function fetchMorphoCuratorData(
   // Step 1: fetch vault curator info + guardian/owner + market bad debt
   const { vault } = await gql<{
     vault: {
+      name: string
       state: {
         curator: string
         timelock: number
@@ -435,7 +499,12 @@ export async function fetchMorphoCuratorData(
     }
   }>(VAULT_CURATOR_QUERY, { address: vaultAddress, chainId })
 
-  const curatorAddress = vault.state.curator
+  // Some curators (e.g. MEV Capital) leave the on-chain `curator` field as zero
+  // and operate directly as `owner`. Fall back to owner so the managed-vaults query
+  // returns the correct set instead of all zero-curator vaults.
+  const curatorAddress = (vault.state.curator && vault.state.curator !== ZERO_ADDRESS)
+    ? vault.state.curator
+    : vault.state.owner
   const primaryCurator = vault.state.curators[0] ?? null
   const marketKeys = vault.state.allocation.map(a => a.market.uniqueKey)
 
@@ -483,6 +552,7 @@ export async function fetchMorphoCuratorData(
   ])
 
   return {
+    vaultName: vault.name ?? null,
     curatorAddress,
     curatorName: primaryCurator?.name ?? null,
     curatorVerified: primaryCurator?.verified ?? false,

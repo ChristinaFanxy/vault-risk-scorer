@@ -11,6 +11,7 @@ const baseVault: VaultData = {
     assetClass: 'stablecoin', oracleType: 'chainlink',
     liquidityDepthUsd: 50_000_000, volatility30d: 0.002, vaultWeightPct: 100,
   }],
+  weightedUtilization: 0, totalMarketLiquidityUsd: 100_000_000,
   maxLtvPct: 80, liquidationThresholdPct: 85, liquidationBonusPct: 5,
   liquidationMechanism: 'dutch-auction', historicalBadDebtUsd: 0,
   oracleManipulationSurface: 'low',

@@ -2,8 +2,8 @@
 import { getAddress, type Address } from 'viem'
 import { getClient, withRetry } from '@/lib/viemClient'
 import { fetchVaultYield } from '@/lib/defillama'
-import { fetchMorphoBadDebt } from '@/lib/thegraph'
-import { fetchMorphoCuratorData, fetchMorphoYieldData, fetchMorphoV2Data, fetchVaultAllocation } from '@/lib/morphoApi'
+import { fetchMorphoBadDebt, fetchCuratorBadDebtHistory } from '@/lib/thegraph'
+import { fetchMorphoCuratorData, fetchMorphoYieldData, fetchMorphoV2Data, fetchVaultAllocation, type VaultMarketAllocation, type VaultLiquidity } from '@/lib/morphoApi'
 import { fetchTokenVolatility30d, fetchTokenLiquidityUsd } from '@/lib/tokenData'
 import type { ChainId, VaultData, AssetClass, OracleType, CuratorType } from '@/lib/scoring/types'
 
@@ -158,6 +158,7 @@ async function detectOracleType(
 type MarketAssetsResult = {
   assets: VaultData['assets']
   oracleManipulationSurface: VaultData['oracleManipulationSurface']
+  liquidity: VaultLiquidity | null
 }
 
 async function fetchMarketAssets(
@@ -166,14 +167,79 @@ async function fetchMarketAssets(
   client: ReturnType<typeof getClient>,
   chainIdNum: number
 ): Promise<MarketAssetsResult> {
+  // API-first: fetch all active market allocations (no market count limit)
+  // Fall back to on-chain withdraw queue only if the API call fails
+  let apiMarkets: VaultMarketAllocation[] = []
+  let apiLiquidity: VaultLiquidity | null = null
+  try {
+    const result = await fetchVaultAllocation(vaultAddress, chainIdNum)
+    apiMarkets = result.allocations
+    apiLiquidity = result.liquidity
+  } catch {
+    // API failed — will fall through to on-chain path below
+  }
+
+  if (apiMarkets.length > 0) {
+    // Deduplicate by collateral address (aggregate USD if same token appears in multiple markets)
+    const seenAddr = new Map<string, { market: VaultMarketAllocation; supplyAssetsUsd: number }>()
+    for (const m of apiMarkets) {
+      const addr = m.collateralAddress.toLowerCase()
+      if (seenAddr.has(addr)) {
+        seenAddr.get(addr)!.supplyAssetsUsd += m.supplyAssetsUsd
+      } else {
+        seenAddr.set(addr, { market: m, supplyAssetsUsd: m.supplyAssetsUsd })
+      }
+    }
+    const deduped = [...seenAddr.values()]
+    const totalSupply = deduped.reduce((s, d) => s + d.supplyAssetsUsd, 0)
+
+    // Detect oracle types on-chain + fetch token metrics in parallel
+    const [oracleTypes, tokenMetrics] = await Promise.all([
+      Promise.all(deduped.map(({ market }) =>
+        detectOracleType(client, market.oracleAddress as Address)
+      )),
+      Promise.all(deduped.map(({ market }) =>
+        Promise.all([
+          fetchTokenVolatility30d(market.collateralAddress, chainIdNum),
+          fetchTokenLiquidityUsd(market.collateralAddress, chainIdNum),
+        ])
+      )),
+    ])
+
+    const uniqueOracleTypes = new Set(oracleTypes as OracleType[])
+    const oracleManipulationSurface: VaultData['oracleManipulationSurface'] =
+      uniqueOracleTypes.has('custom') ? 'high'
+      : uniqueOracleTypes.has('uniswap-twap') ? 'medium'
+      : 'low'
+
+    const assets = deduped.map(({ market, supplyAssetsUsd }, i) => {
+      const addr = market.collateralAddress.toLowerCase()
+      const info = TOKEN_REGISTRY[addr]
+      const assetClass = info?.assetClass ?? classifyBySymbol(market.collateralSymbol)
+      const weight = totalSupply > 0 ? (supplyAssetsUsd / totalSupply) * 100 : 100 / deduped.length
+      const [apiVol, apiLiq] = tokenMetrics[i]
+
+      return {
+        address: market.collateralAddress,
+        symbol: market.collateralSymbol,
+        assetClass,
+        oracleType: oracleTypes[i] as OracleType,
+        liquidityDepthUsd: apiLiq ?? info?.liquidityDepthUsd ?? defaultLiquidity(assetClass),
+        volatility30d: apiVol ?? info?.volatility30d ?? defaultVolatility(assetClass),
+        vaultWeightPct: weight,
+      }
+    })
+
+    return { assets, oracleManipulationSurface, liquidity: apiLiquidity }
+  }
+
+  // Fallback: on-chain withdraw queue (limited to 15 markets)
   const queueLength = await withRetry(() =>
     client.readContract({ address: vaultAddress, abi: METAMORPHO_ABI, functionName: 'withdrawQueueLength' })
   )
-  if (queueLength === BigInt(0)) return { assets: [], oracleManipulationSurface: 'low' }
+  if (queueLength === BigInt(0)) return { assets: [], oracleManipulationSurface: 'low', liquidity: null }
 
   const count = Math.min(Number(queueLength), 15)
-
-  // Get all market IDs
   const marketIds = await Promise.all(
     Array.from({ length: count }, (_, i) =>
       withRetry(() => client.readContract({
@@ -185,58 +251,38 @@ async function fetchMarketAssets(
     )
   )
 
-  // Get market params + API allocation amounts in parallel (no longer need on-chain market state)
-  const [allParams, apiAllocation] = await Promise.all([
-    Promise.all(marketIds.map(id =>
-      withRetry(() => client.readContract({
-        address: MORPHO_BLUE_ADDRESS,
-        abi: MORPHO_BLUE_ABI,
-        functionName: 'idToMarketParams',
-        args: [id],
-      }))
-    )),
-    fetchVaultAllocation(vaultAddress, chainIdNum).catch(() => new Map<string, number>()),
-  ])
+  const allParams = await Promise.all(marketIds.map(id =>
+    withRetry(() => client.readContract({
+      address: MORPHO_BLUE_ADDRESS,
+      abi: MORPHO_BLUE_ABI,
+      functionName: 'idToMarketParams',
+      args: [id],
+    }))
+  ))
 
-  // Deduplicate by collateral token — one asset entry per unique token
-  // Use API per-vault allocation amount for weights; fall back to equal weight if unavailable
-  const seen = new Map<string, number>() // addr → index in result
-  const deduped: Array<{
-    params: typeof allParams[0]
-    supplyAssetsUsd: number
-  }> = []
-
+  // Deduplicate by collateral token
+  const seen = new Map<string, number>()
+  const deduped: Array<{ params: typeof allParams[0] }> = []
   for (let i = 0; i < allParams.length; i++) {
     const addr = allParams[i].collateralToken.toLowerCase()
-    const marketKey = marketIds[i].toLowerCase()
-    const marketUsd = apiAllocation.get(marketKey) ?? 0
-    if (seen.has(addr)) {
-      deduped[seen.get(addr)!].supplyAssetsUsd += marketUsd
-    } else {
+    if (!seen.has(addr)) {
       seen.set(addr, deduped.length)
-      deduped.push({ params: allParams[i], supplyAssetsUsd: marketUsd })
+      deduped.push({ params: allParams[i] })
     }
   }
 
-  // When API data is available, filter out markets where this vault has 0 allocation
-  const active = apiAllocation.size > 0
-    ? deduped.filter(d => d.supplyAssetsUsd > 0)
-    : deduped
-  const totalSupply = active.reduce((s, d) => s + d.supplyAssetsUsd, 0)
-
-  // Read symbols, detect oracle types, and fetch real token market data in parallel
   const [symbols, oracleTypes, tokenMetrics] = await Promise.all([
-    Promise.all(active.map(({ params }) =>
+    Promise.all(deduped.map(({ params }) =>
       client.readContract({
         address: params.collateralToken,
         abi: ERC20_SYMBOL_ABI,
         functionName: 'symbol',
       }).catch(() => 'UNKNOWN')
     )),
-    Promise.all(active.map(({ params }) =>
+    Promise.all(deduped.map(({ params }) =>
       detectOracleType(client, params.oracle as Address)
     )),
-    Promise.all(active.map(({ params }) =>
+    Promise.all(deduped.map(({ params }) =>
       Promise.all([
         fetchTokenVolatility30d(params.collateralToken, chainIdNum),
         fetchTokenLiquidityUsd(params.collateralToken, chainIdNum),
@@ -244,19 +290,17 @@ async function fetchMarketAssets(
     )),
   ])
 
-  // Derive oracle manipulation surface from the worst oracle type present
   const uniqueOracleTypes = new Set(oracleTypes as OracleType[])
   const oracleManipulationSurface: VaultData['oracleManipulationSurface'] =
     uniqueOracleTypes.has('custom') ? 'high'
     : uniqueOracleTypes.has('uniswap-twap') ? 'medium'
     : 'low'
 
-  const assets = active.map(({ params, supplyAssetsUsd }, i) => {
+  const assets = deduped.map(({ params }, i) => {
     const addr = params.collateralToken.toLowerCase()
     const info = TOKEN_REGISTRY[addr]
     const symbol = symbols[i] as string
     const assetClass = info?.assetClass ?? classifyBySymbol(symbol)
-    const weight = totalSupply > 0 ? (supplyAssetsUsd / totalSupply) * 100 : 100 / deduped.length
     const [apiVol, apiLiq] = tokenMetrics[i]
 
     return {
@@ -264,14 +308,13 @@ async function fetchMarketAssets(
       symbol,
       assetClass,
       oracleType: oracleTypes[i] as OracleType,
-      // API data → TOKEN_REGISTRY estimate → class default
       liquidityDepthUsd: apiLiq ?? info?.liquidityDepthUsd ?? defaultLiquidity(assetClass),
       volatility30d: apiVol ?? info?.volatility30d ?? defaultVolatility(assetClass),
-      vaultWeightPct: weight,
+      vaultWeightPct: 100 / deduped.length, // equal weight — no allocation data in fallback
     }
   })
 
-  return { assets, oracleManipulationSurface }
+  return { assets, oracleManipulationSurface, liquidity: null }
 }
 
 /**
@@ -382,6 +425,8 @@ async function fetchMorphoV2VaultData(
     apy90dAvg: v2.apy90dAvg,
     apyHistory: v2.apyHistory,
     assets,
+    weightedUtilization: 0,               // V2 liquidity data not yet available
+    totalMarketLiquidityUsd: v2.tvlUsd,   // conservative default
     maxLtvPct,
     liquidationThresholdPct,
     liquidationBonusPct: 5,
@@ -428,11 +473,11 @@ export async function fetchMorphoVaultData(
       ? fetchVaultYield(defillamaPoolId).catch(() => fetchMorphoYieldData(address, chainId))
       : fetchMorphoYieldData(address, chainId),
     fetchMorphoBadDebt(address, chainId),
-    fetchMarketAssets(checksumAddress, chainId, client, chainId).catch(() => ({ assets: [], oracleManipulationSurface: 'low' as const })),
+    fetchMarketAssets(checksumAddress, chainId, client, chainId).catch(() => ({ assets: [], oracleManipulationSurface: 'low' as const, liquidity: null })),
     fetchMorphoCuratorData(address, chainId).catch(() => null),
   ])
   const yield_ = yieldResult
-  const { assets } = marketResult
+  const { assets, liquidity } = marketResult
   // When Morpho API is available, trust its oracle validation over on-chain detection.
   // On-chain detectOracleType() misclassifies MorphoChainlinkOracleV2 as 'custom' when
   // BASE_FEED_ONE() reverts (zero address). Morpho's incorrect_oracle_configuration warning
@@ -462,9 +507,15 @@ export async function fetchMorphoVaultData(
   const liquidationThresholdPct = curatorData?.weightedAvgLltvPct ?? 85
   const maxLtvPct = Math.max(liquidationThresholdPct - 5, 0)
 
-  // Use Morpho API bad debt as primary; fall back to The Graph value
-  const morphoBadDebt = curatorData?.totalRealizedBadDebtUsd ?? -1
-  const historicalBadDebtUsd = morphoBadDebt >= 0 ? morphoBadDebt : badDebt
+  // Fetch curator-level bad debt history from The Graph (immutable, can't be "washed").
+  // This runs after curatorData resolves since we need the curator address.
+  const effectiveCurator = curatorData?.curatorAddress ?? address
+  const curatorHistory = await fetchCuratorBadDebtHistory(effectiveCurator, chainId).catch(() => null)
+
+  // Priority: The Graph (immutable history) > Morpho API (current state) > legacy subgraph
+  const historicalBadDebtUsd = curatorHistory && curatorHistory.totalBadDebtUsd > 0
+    ? curatorHistory.totalBadDebtUsd
+    : curatorData?.totalRealizedBadDebtUsd ?? badDebt
 
   const placeholderFields: string[] = [
     'liquidationBonusPct',
@@ -477,7 +528,7 @@ export async function fetchMorphoVaultData(
     address,
     chainId,
     protocol: 'morpho',
-    name: name as string,
+    name: curatorData?.vaultName || (name as string).trim(),
     tvlUsd: yield_.tvlUsd,
     currentApyPct: yield_.currentApyPct,
     apy7dAvg: yield_.apy7dAvg,
@@ -485,6 +536,8 @@ export async function fetchMorphoVaultData(
     apy90dAvg: yield_.apy90dAvg,
     apyHistory: yield_.apyHistory,
     assets,
+    weightedUtilization: liquidity?.weightedUtilization ?? 0,
+    totalMarketLiquidityUsd: liquidity?.totalMarketLiquidityUsd ?? yield_.tvlUsd,
     maxLtvPct,
     liquidationThresholdPct,
     liquidationBonusPct: 5,
@@ -496,8 +549,8 @@ export async function fetchMorphoVaultData(
     curatorType,
     permissionScope,
     timelockHours,
-    vaultsManaged: curatorData?.vaultsManaged ?? 1,
-    incidentCount: curatorData?.incidentCount ?? 0,
+    vaultsManaged: curatorHistory?.historicalVaultCount ?? curatorData?.vaultsManaged ?? 1,
+    incidentCount: curatorHistory?.affectedMarketCount ?? curatorData?.incidentCount ?? 0,
     curatorBorrowsFromVault: curatorData?.curatorBorrowsFromVault ?? false,
     placeholderFields,
   }

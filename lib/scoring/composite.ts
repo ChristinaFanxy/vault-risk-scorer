@@ -39,7 +39,18 @@ export function scoreVault(vault: VaultData, dataFreshnessMs = 0): CompositeScor
   const assetRisk = scoreAssetRisk(vault)
   const liquidationRisk = scoreLiquidationRisk(vault)
   const curatorRisk = scoreCuratorRisk(vault)
-  const overallScore = computeCompositeScore(assetRisk, liquidationRisk, curatorRisk)
+  let overallScore = computeCompositeScore(assetRisk, liquidationRisk, curatorRisk)
+
+  // Critical liquidity override: if the vault is effectively frozen (≥99% utilization
+  // with near-zero available liquidity), force a minimum score of 85 (F grade).
+  // No matter how good the curator or collateral is, users can't withdraw = critical risk.
+  const liqRatio = vault.tvlUsd > 0 ? vault.totalMarketLiquidityUsd / vault.tvlUsd : 1
+  if (vault.weightedUtilization >= 0.99 && liqRatio < 0.01) {
+    overallScore = Math.max(overallScore, 85)
+  } else if (vault.weightedUtilization >= 0.95) {
+    overallScore = Math.max(overallScore, 70)
+  }
+
   const { grade, label } = scoreToGrade(overallScore)
 
   return {

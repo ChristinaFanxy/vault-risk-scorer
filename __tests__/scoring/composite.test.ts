@@ -40,6 +40,7 @@ describe('scoreVault', () => {
     apy7dAvg: 4.5, apy30dAvg: 4.5, apy90dAvg: 4.5,
     apyHistory: [{ timestamp: 1, apyPct: 4.5 }, { timestamp: 2, apyPct: 4.5 }],
     assets: [{ address: '0xa', symbol: 'USDC', assetClass: 'stablecoin', oracleType: 'chainlink', liquidityDepthUsd: 50_000_000, volatility30d: 0.001, vaultWeightPct: 100 }],
+    weightedUtilization: 0, totalMarketLiquidityUsd: 100_000_000,
     maxLtvPct: 80, liquidationThresholdPct: 90, liquidationBonusPct: 8,
     liquidationMechanism: 'dutch-auction', historicalBadDebtUsd: 0,
     oracleManipulationSurface: 'low',
