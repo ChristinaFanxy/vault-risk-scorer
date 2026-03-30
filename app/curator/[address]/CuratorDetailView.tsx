@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { useLanguage } from '@/lib/i18n'
 import type { BadDebtEvent } from '@/lib/thegraph'
 
@@ -50,9 +49,9 @@ export default function CuratorDetailView({
     <div className="min-h-screen bg-brand-bg text-brand-cream p-6 max-w-4xl mx-auto">
       {/* Header */}
       <div className="mb-8">
-        <Link href="/" className="text-brand-cream hover:text-brand text-sm font-medium mb-4 inline-block">
-          {t.backToSearch}
-        </Link>
+        <button onClick={() => window.history.back()} className="bg-brand-card border border-brand-border text-brand-cream hover:border-brand text-sm font-medium mb-4 px-3 py-1.5 rounded-lg transition-colors">
+          ← Back to vault
+        </button>
         <h1 className="text-2xl font-bold text-brand-cream">{t.curatorBadDebtHistory}</h1>
         <p className="text-sm text-brand-light mt-1 font-mono">{address}</p>
         {allAddresses.length > 1 && (

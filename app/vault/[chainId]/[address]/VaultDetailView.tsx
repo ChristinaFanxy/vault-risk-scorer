@@ -26,9 +26,9 @@ export function VaultDetailView({ score, address, chainId }: VaultDetailViewProp
     <div className="max-w-3xl mx-auto">
       {/* Back link */}
       <div className="mb-6">
-        <a href="/" className="text-brand-cream hover:text-brand text-sm font-medium">
-          {t.backToSearch}
-        </a>
+        <button onClick={() => window.history.back()} className="bg-brand-card border border-brand-border text-brand-cream hover:border-brand text-sm font-medium px-3 py-1.5 rounded-lg transition-colors">
+          ← Back
+        </button>
       </div>
 
       {/* Vault header */}
