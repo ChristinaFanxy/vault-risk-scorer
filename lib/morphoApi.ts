@@ -131,6 +131,39 @@ const CURATOR_POSITIONS_QUERY = `
   }
 `
 
+const CURATOR_ALL_ADDRESSES_QUERY = `
+  query CuratorAddresses($addresses: [String!]!) {
+    curators(where: { address_in: $addresses }) {
+      items { name addresses { address chainId } }
+    }
+  }
+`
+
+/**
+ * Given one curator address, find ALL addresses this curator uses across all chains.
+ * Uses Morpho's curator registry to resolve the full identity.
+ * Returns deduplicated lowercase addresses.
+ */
+export async function fetchCuratorAllAddresses(knownAddress: string): Promise<string[]> {
+  try {
+    const { curators } = await gql<{
+      curators: { items: Array<{ name: string; addresses: Array<{ address: string; chainId: number }> }> }
+    }>(CURATOR_ALL_ADDRESSES_QUERY, { addresses: [knownAddress] })
+
+    if (curators.items.length === 0) return [knownAddress.toLowerCase()]
+
+    const allAddrs = new Set<string>()
+    for (const curator of curators.items) {
+      for (const a of curator.addresses) {
+        allAddrs.add(a.address.toLowerCase())
+      }
+    }
+    return [...allAddrs]
+  } catch {
+    return [knownAddress.toLowerCase()]
+  }
+}
+
 const VAULTS_BY_CURATOR_QUERY = `
   query VaultsByCurator($curatorAddresses: [String!]!, $chainIds: [Int!]!) {
     vaults(where: { curatorAddress_in: $curatorAddresses, chainId_in: $chainIds }) {

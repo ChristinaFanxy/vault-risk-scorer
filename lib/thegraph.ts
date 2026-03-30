@@ -80,44 +80,46 @@ const ALL_CHAINS: ChainId[] = [1, 8453]
 
 /**
  * Queries a single chain's subgraph for curator vault/market/bad-debt data.
- * Returns partial result to be merged across chains.
+ * Accepts multiple curator addresses (same curator may use different addresses per chain).
  */
 async function fetchCuratorBadDebtForChain(
-  curator: string,
+  curatorAddresses: string[],
   chainId: ChainId
 ): Promise<{ marketIds: Set<string>; vaultIds: Set<string>; totalBadDebtUsd: number; eventCount: number; affectedMarkets: Set<string> } | null> {
   type MarketEntry = { market: { id: string }; metaMorpho: { id: string } }
   const marketIds = new Set<string>()
   const vaultIds = new Set<string>()
 
-  // Step 1: Get all market IDs from this curator's vaults (paginate if > 1000)
-  let skip = 0
-  while (true) {
-    const data = await subgraphQuery<{
-      byCurator: MarketEntry[]
-      byOwner: MarketEntry[]
-    }>(chainId, CURATOR_MARKETS_QUERY, { curator, skip })
+  // Step 1: Get all market IDs from this curator's vaults, querying each address
+  for (const curator of curatorAddresses) {
+    let skip = 0
+    while (true) {
+      const data = await subgraphQuery<{
+        byCurator: MarketEntry[]
+        byOwner: MarketEntry[]
+      }>(chainId, CURATOR_MARKETS_QUERY, { curator, skip })
 
-    if (!data) return null  // subgraph unavailable for this chain
-    const combined = [...data.byCurator, ...data.byOwner]
-    if (combined.length === 0) break
-    for (const mm of combined) {
-      marketIds.add(mm.market.id)
-      vaultIds.add(mm.metaMorpho.id)
+      if (!data) return null  // subgraph unavailable for this chain
+      const combined = [...data.byCurator, ...data.byOwner]
+      if (combined.length === 0) break
+      for (const mm of combined) {
+        marketIds.add(mm.market.id)
+        vaultIds.add(mm.metaMorpho.id)
+      }
+      if (data.byCurator.length < 1000 && data.byOwner.length < 1000) break
+      skip += 1000
     }
-    if (data.byCurator.length < 1000 && data.byOwner.length < 1000) break
-    skip += 1000
   }
 
   // Step 2: Get all bad debt events and filter by this curator's markets
   let totalBadDebtUsd = 0
   let eventCount = 0
   const affectedMarkets = new Set<string>()
-  skip = 0
+  let bdSkip = 0
   while (true) {
     const data = await subgraphQuery<{
       badDebtRealizations: Array<{ badDebtUSD: string; market: { id: string } }>
-    }>(chainId, ALL_BAD_DEBT_QUERY, { skip })
+    }>(chainId, ALL_BAD_DEBT_QUERY, { skip: bdSkip })
 
     if (!data || data.badDebtRealizations.length === 0) break
     for (const event of data.badDebtRealizations) {
@@ -131,7 +133,7 @@ async function fetchCuratorBadDebtForChain(
       }
     }
     if (data.badDebtRealizations.length < 1000) break
-    skip += 1000
+    bdSkip += 1000
   }
 
   return { marketIds, vaultIds, totalBadDebtUsd, eventCount, affectedMarkets }
@@ -140,16 +142,17 @@ async function fetchCuratorBadDebtForChain(
 /**
  * Queries The Graph for a curator's complete bad debt history across ALL chains
  * and ALL markets they have ever managed — including deleted vaults and removed markets.
+ * Accepts multiple addresses (same curator may use different addresses on different chains).
  * Returns null if no subgraph is available.
  */
 export async function fetchCuratorBadDebtHistory(
-  curatorAddress: string
+  curatorAddresses: string[]
 ): Promise<CuratorBadDebtHistory | null> {
-  const curator = curatorAddress.toLowerCase()
+  const addrs = curatorAddresses.map(a => a.toLowerCase())
 
-  // Query all supported chains in parallel
+  // Query all supported chains in parallel, passing all curator addresses
   const results = await Promise.all(
-    ALL_CHAINS.map(cid => fetchCuratorBadDebtForChain(curator, cid).catch(() => null))
+    ALL_CHAINS.map(cid => fetchCuratorBadDebtForChain(addrs, cid).catch(() => null))
   )
 
   // Merge results across chains

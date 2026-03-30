@@ -3,7 +3,7 @@ import { getAddress, type Address } from 'viem'
 import { getClient, withRetry } from '@/lib/viemClient'
 import { fetchVaultYield } from '@/lib/defillama'
 import { fetchMorphoBadDebt, fetchCuratorBadDebtHistory } from '@/lib/thegraph'
-import { fetchMorphoCuratorData, fetchMorphoYieldData, fetchMorphoV2Data, fetchVaultAllocation, type VaultMarketAllocation, type VaultLiquidity } from '@/lib/morphoApi'
+import { fetchMorphoCuratorData, fetchMorphoYieldData, fetchMorphoV2Data, fetchVaultAllocation, fetchCuratorAllAddresses, type VaultMarketAllocation, type VaultLiquidity } from '@/lib/morphoApi'
 import { fetchTokenVolatility30d, fetchTokenLiquidityUsd } from '@/lib/tokenData'
 import type { ChainId, VaultData, AssetClass, OracleType, CuratorType } from '@/lib/scoring/types'
 
@@ -492,6 +492,14 @@ async function fetchMorphoV2VaultData(
   const liquidationThresholdPct = weightedAvgLltvPct
   const maxLtvPct = Math.max(liquidationThresholdPct - 5, 0)
 
+  // Fetch curator-level bad debt history from The Graph (same as V1 path)
+  const allCuratorAddresses = await fetchCuratorAllAddresses(v2.curatorAddress).catch(() => [v2.curatorAddress])
+  const curatorHistory = await fetchCuratorBadDebtHistory(allCuratorAddresses).catch(() => null)
+
+  const historicalBadDebtUsd = curatorHistory && curatorHistory.totalBadDebtUsd > 0
+    ? curatorHistory.totalBadDebtUsd
+    : totalRealizedBadDebtUsd
+
   const placeholderFields: string[] = [
     'liquidationBonusPct',
     'liquidationMechanism',
@@ -517,7 +525,7 @@ async function fetchMorphoV2VaultData(
     liquidationThresholdPct,
     liquidationBonusPct: 5,
     liquidationMechanism: 'dutch-auction',
-    historicalBadDebtUsd: totalRealizedBadDebtUsd,
+    historicalBadDebtUsd,
     oracleManipulationSurface,
     hardcodedOracleCount: 0,            // V2 oracle detection not yet implemented
     hardcodedOracleSymbols: [],
@@ -526,8 +534,8 @@ async function fetchMorphoV2VaultData(
     curatorType,
     permissionScope,
     timelockHours,
-    vaultsManaged: v2.vaultsManaged,
-    incidentCount,
+    vaultsManaged: curatorHistory?.historicalVaultCount ?? v2.vaultsManaged,
+    incidentCount: curatorHistory?.affectedMarketCount ?? incidentCount,
     curatorBorrowsFromVault: false,
     placeholderFields,
   }
@@ -596,9 +604,10 @@ export async function fetchMorphoVaultData(
   const maxLtvPct = Math.max(liquidationThresholdPct - 5, 0)
 
   // Fetch curator-level bad debt history from The Graph (immutable, can't be "washed").
-  // This runs after curatorData resolves since we need the curator address.
+  // Resolve ALL addresses this curator uses across chains (same entity, different addresses).
   const effectiveCurator = curatorData?.curatorAddress ?? address
-  const curatorHistory = await fetchCuratorBadDebtHistory(effectiveCurator).catch(() => null)
+  const allCuratorAddresses = await fetchCuratorAllAddresses(effectiveCurator).catch(() => [effectiveCurator])
+  const curatorHistory = await fetchCuratorBadDebtHistory(allCuratorAddresses).catch(() => null)
 
   // Priority: The Graph (immutable history) > Morpho API (current state) > legacy subgraph
   const historicalBadDebtUsd = curatorHistory && curatorHistory.totalBadDebtUsd > 0
