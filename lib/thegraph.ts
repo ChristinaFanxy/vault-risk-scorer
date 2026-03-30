@@ -76,22 +76,21 @@ async function subgraphQuery<T>(
   return json.data as T
 }
 
+const ALL_CHAINS: ChainId[] = [1, 8453]
+
 /**
- * Queries The Graph for a curator's complete bad debt history across ALL markets
- * they have ever managed — including deleted vaults and removed markets.
- * Returns null if the subgraph is unavailable.
+ * Queries a single chain's subgraph for curator vault/market/bad-debt data.
+ * Returns partial result to be merged across chains.
  */
-export async function fetchCuratorBadDebtHistory(
-  curatorAddress: string,
+async function fetchCuratorBadDebtForChain(
+  curator: string,
   chainId: ChainId
-): Promise<CuratorBadDebtHistory | null> {
-  const curator = curatorAddress.toLowerCase()
+): Promise<{ marketIds: Set<string>; vaultIds: Set<string>; totalBadDebtUsd: number; eventCount: number; affectedMarkets: Set<string> } | null> {
+  type MarketEntry = { market: { id: string }; metaMorpho: { id: string } }
+  const marketIds = new Set<string>()
+  const vaultIds = new Set<string>()
 
   // Step 1: Get all market IDs from this curator's vaults (paginate if > 1000)
-  // Merges results from both curator and owner fields to catch all vaults
-  type MarketEntry = { market: { id: string }; metaMorpho: { id: string } }
-  const allMarketIds = new Set<string>()
-  const allVaultIds = new Set<string>()
   let skip = 0
   while (true) {
     const data = await subgraphQuery<{
@@ -99,21 +98,15 @@ export async function fetchCuratorBadDebtHistory(
       byOwner: MarketEntry[]
     }>(chainId, CURATOR_MARKETS_QUERY, { curator, skip })
 
-    if (!data) break
+    if (!data) return null  // subgraph unavailable for this chain
     const combined = [...data.byCurator, ...data.byOwner]
     if (combined.length === 0) break
     for (const mm of combined) {
-      allMarketIds.add(mm.market.id)
-      allVaultIds.add(mm.metaMorpho.id)
+      marketIds.add(mm.market.id)
+      vaultIds.add(mm.metaMorpho.id)
     }
-    // Stop if both returned less than 1000
     if (data.byCurator.length < 1000 && data.byOwner.length < 1000) break
     skip += 1000
-  }
-
-  if (allMarketIds.size === 0) {
-    // Curator has no MetaMorpho vaults in the subgraph — may be owner-only pattern
-    return { totalBadDebtUsd: 0, eventCount: 0, affectedMarketCount: 0, historicalVaultCount: 0 }
   }
 
   // Step 2: Get all bad debt events and filter by this curator's markets
@@ -128,7 +121,7 @@ export async function fetchCuratorBadDebtHistory(
 
     if (!data || data.badDebtRealizations.length === 0) break
     for (const event of data.badDebtRealizations) {
-      if (allMarketIds.has(event.market.id)) {
+      if (marketIds.has(event.market.id)) {
         const usd = parseFloat(event.badDebtUSD)
         if (usd > 0) {
           totalBadDebtUsd += usd
@@ -141,10 +134,46 @@ export async function fetchCuratorBadDebtHistory(
     skip += 1000
   }
 
+  return { marketIds, vaultIds, totalBadDebtUsd, eventCount, affectedMarkets }
+}
+
+/**
+ * Queries The Graph for a curator's complete bad debt history across ALL chains
+ * and ALL markets they have ever managed — including deleted vaults and removed markets.
+ * Returns null if no subgraph is available.
+ */
+export async function fetchCuratorBadDebtHistory(
+  curatorAddress: string
+): Promise<CuratorBadDebtHistory | null> {
+  const curator = curatorAddress.toLowerCase()
+
+  // Query all supported chains in parallel
+  const results = await Promise.all(
+    ALL_CHAINS.map(cid => fetchCuratorBadDebtForChain(curator, cid).catch(() => null))
+  )
+
+  // Merge results across chains
+  let totalBadDebtUsd = 0
+  let eventCount = 0
+  const allVaultIds = new Set<string>()
+  const allAffectedMarkets = new Set<string>()
+  let hasAnyData = false
+
+  for (const r of results) {
+    if (!r) continue
+    hasAnyData = true
+    totalBadDebtUsd += r.totalBadDebtUsd
+    eventCount += r.eventCount
+    for (const v of r.vaultIds) allVaultIds.add(v)
+    for (const m of r.affectedMarkets) allAffectedMarkets.add(m)
+  }
+
+  if (!hasAnyData) return null
+
   return {
     totalBadDebtUsd,
     eventCount,
-    affectedMarketCount: affectedMarkets.size,
+    affectedMarketCount: allAffectedMarkets.size,
     historicalVaultCount: allVaultIds.size,
   }
 }

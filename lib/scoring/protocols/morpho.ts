@@ -510,7 +510,7 @@ export async function fetchMorphoVaultData(
   // Fetch curator-level bad debt history from The Graph (immutable, can't be "washed").
   // This runs after curatorData resolves since we need the curator address.
   const effectiveCurator = curatorData?.curatorAddress ?? address
-  const curatorHistory = await fetchCuratorBadDebtHistory(effectiveCurator, chainId).catch(() => null)
+  const curatorHistory = await fetchCuratorBadDebtHistory(effectiveCurator).catch(() => null)
 
   // Priority: The Graph (immutable history) > Morpho API (current state) > legacy subgraph
   const historicalBadDebtUsd = curatorHistory && curatorHistory.totalBadDebtUsd > 0
