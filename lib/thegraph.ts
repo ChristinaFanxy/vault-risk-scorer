@@ -62,6 +62,8 @@ export interface CuratorBadDebtHistory {
   historicalVaultCount: number
   /** Individual bad debt events with market ID, amount, and chain */
   events: BadDebtEvent[]
+  /** All vault addresses this curator has managed (for position lookups) */
+  allVaultAddresses: string[]
   /** All market IDs ever associated with this curator's vaults, per chain */
   allMarketIds: Array<{ marketId: string; chainId: ChainId }>
 }
@@ -200,6 +202,7 @@ export async function fetchCuratorBadDebtHistory(
     affectedMarketCount: allAffectedMarkets.size,
     historicalVaultCount: allVaultIds.size,
     events: allEvents,
+    allVaultAddresses: [...allVaultIds],
     allMarketIds,
   }
 }

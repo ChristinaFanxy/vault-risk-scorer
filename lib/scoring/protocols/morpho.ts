@@ -54,6 +54,21 @@ const MORPHO_BLUE_ABI = [
       ],
     }],
   },
+  {
+    name: 'position',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'id', type: 'bytes32' }, { name: 'user', type: 'address' }],
+    outputs: [{
+      name: 'p',
+      type: 'tuple',
+      components: [
+        { name: 'supplyShares', type: 'uint256' },
+        { name: 'borrowShares', type: 'uint128' },
+        { name: 'collateral', type: 'uint128' },
+      ],
+    }],
+  },
 ] as const
 
 const ERC20_SYMBOL_ABI = [
@@ -180,16 +195,16 @@ const BLOCKS_PER_WEEK = BLOCKS_PER_DAY * 7
 
 /**
  * Detect unrealized bad debt by reading on-chain market state for historical markets.
- * Checks all historical markets for high utilization (>95%) with significant borrows.
- * This catches cases where bad debt hasn't been formally "realized" by the protocol
- * (e.g., Resolv USR incident where oracle was hardcoded and liquidations didn't fire).
- * Subtracts already-counted realized bad debt to avoid double counting.
+ * For each market with >95% utilization, reads each vault's position(id, vault) to
+ * calculate the vault's pro-rata share of the stuck borrows — not the whole market total.
+ * This catches cases like the Resolv USR incident ($6M+ stuck but never formally realized).
  */
 async function detectUnrealizedBadDebt(
   historicalMarketIds: Array<{ marketId: string; chainId: ChainId }>,
+  vaultAddresses: string[],
   realizedBadDebtUsd: number,
 ): Promise<number> {
-  if (historicalMarketIds.length === 0) return 0
+  if (historicalMarketIds.length === 0 || vaultAddresses.length === 0) return 0
 
   const byChain = new Map<ChainId, string[]>()
   for (const m of historicalMarketIds) {
@@ -202,59 +217,111 @@ async function detectUnrealizedBadDebt(
 
   for (const [chainId, marketIds] of byChain) {
     const client = getClient(chainId)
-    // Limit to 50 markets per chain to avoid timeout
-    const toCheck = marketIds.slice(0, 50)
-    const results = await Promise.allSettled(
-      toCheck.map(async (id) => {
-        const marketId = id as `0x${string}`
-        const [state, params] = await Promise.all([
-          client.readContract({
-            address: MORPHO_BLUE_ADDRESS,
-            abi: MORPHO_BLUE_ABI,
-            functionName: 'market',
-            args: [marketId],
-          }),
-          client.readContract({
-            address: MORPHO_BLUE_ADDRESS,
-            abi: MORPHO_BLUE_ABI,
-            functionName: 'idToMarketParams',
-            args: [marketId],
-          }),
-        ])
-        return { state, params }
-      })
-    )
 
-    for (const r of results) {
-      if (r.status !== 'fulfilled') continue
-      const { state, params } = r.value
-      const totalBorrowAssets = state.totalBorrowAssets
-      if (totalBorrowAssets <= BigInt(0)) continue
+    // Step 1: Batch-read all market states via multicall (handles 300+ markets efficiently)
+    const marketCalls = marketIds.map(id => ({
+      address: MORPHO_BLUE_ADDRESS as Address,
+      abi: MORPHO_BLUE_ABI,
+      functionName: 'market' as const,
+      args: [id as `0x${string}`] as const,
+    }))
+    const batchSize = 200
+    type MarketResult = { totalSupplyAssets: bigint; totalSupplyShares: bigint; totalBorrowAssets: bigint; totalBorrowShares: bigint; lastUpdate: bigint; fee: bigint }
+    const allStates: Array<{ id: string; state: MarketResult | null }> = []
 
-      // Get loan token decimals
-      const loanToken = params.loanToken as Address
-      let decimals = 6 // default: USDC
-      try {
-        decimals = await withRetry(() =>
-          client.readContract({ address: loanToken, abi: ERC20_DECIMALS_ABI, functionName: 'decimals' })
-        )
-      } catch { /* use default */ }
+    for (let i = 0; i < marketCalls.length; i += batchSize) {
+      const batch = marketCalls.slice(i, i + batchSize)
+      const results = await client.multicall({ contracts: batch, allowFailure: true })
+      for (let j = 0; j < results.length; j++) {
+        const r = results[j]
+        allStates.push({
+          id: marketIds[i + j],
+          state: r.status === 'success' ? r.result as unknown as MarketResult : null,
+        })
+      }
+    }
 
-      const borrowUsd = Number(totalBorrowAssets) / (10 ** decimals)
+    // Step 2: Filter to high-utilization markets with significant borrows
+    const stuckMarkets: Array<{ id: `0x${string}`; totalBorrowAssets: bigint; totalSupplyShares: bigint; decimals: number }> = []
+    for (const { id, state } of allStates) {
+      if (!state || state.totalBorrowAssets <= BigInt(0)) continue
 
-      // Only count if significant (> $1000) and near-100% utilization
-      // (supply ≈ borrow means no idle liquidity — funds are stuck)
-      const totalSupplyAssets = state.totalSupplyAssets
-      const utilization = totalSupplyAssets > BigInt(0)
-        ? Number(totalBorrowAssets) / Number(totalSupplyAssets)
+      const utilization = state.totalSupplyAssets > BigInt(0)
+        ? Number(state.totalBorrowAssets) / Number(state.totalSupplyAssets)
         : 0
-      if (borrowUsd > 1000 && utilization > 0.95) {
-        totalUnrealizedUsd += borrowUsd
+      // Quick USD estimate assuming 6 decimals (USDC); refine later for non-stablecoin markets
+      const roughBorrowUsd = Number(state.totalBorrowAssets) / 1e6
+      if (roughBorrowUsd > 1000 && utilization > 0.95) {
+        stuckMarkets.push({
+          id: id as `0x${string}`,
+          totalBorrowAssets: state.totalBorrowAssets,
+          totalSupplyShares: state.totalSupplyShares,
+          decimals: 6, // will refine below
+        })
+      }
+    }
+
+    if (stuckMarkets.length === 0) continue
+
+    // Step 2b: Read actual loan token decimals for stuck markets
+    const paramsCalls = stuckMarkets.map(m => ({
+      address: MORPHO_BLUE_ADDRESS as Address,
+      abi: MORPHO_BLUE_ABI,
+      functionName: 'idToMarketParams' as const,
+      args: [m.id] as const,
+    }))
+    const paramsResults = await client.multicall({ contracts: paramsCalls, allowFailure: true })
+    for (let i = 0; i < paramsResults.length; i++) {
+      if (paramsResults[i].status === 'success') {
+        const params = paramsResults[i].result as unknown as { loanToken: Address }
+        try {
+          const decimals = await client.readContract({
+            address: params.loanToken, abi: ERC20_DECIMALS_ABI, functionName: 'decimals',
+          })
+          stuckMarkets[i].decimals = decimals
+
+          // Re-check with correct decimals — filter out false positives from WETH markets (18 decimals)
+          const actualBorrowUsd = Number(stuckMarkets[i].totalBorrowAssets) / (10 ** decimals)
+          if (actualBorrowUsd <= 1000) {
+            stuckMarkets[i].totalBorrowAssets = BigInt(0) // mark for skip
+          }
+        } catch { /* keep default 6 */ }
+      }
+    }
+
+    // Step 3: For each stuck market, batch-read vault positions via multicall
+    for (const mkt of stuckMarkets) {
+      if (mkt.totalBorrowAssets <= BigInt(0)) continue // skipped in step 2b
+
+      const posCalls = vaultAddresses.map(addr => ({
+        address: MORPHO_BLUE_ADDRESS as Address,
+        abi: MORPHO_BLUE_ABI,
+        functionName: 'position' as const,
+        args: [mkt.id, addr as Address] as const,
+      }))
+
+      let curatorSupplyShares = BigInt(0)
+      for (let i = 0; i < posCalls.length; i += batchSize) {
+        const batch = posCalls.slice(i, i + batchSize)
+        const posResults = await client.multicall({ contracts: batch, allowFailure: true })
+        for (const pr of posResults) {
+          if (pr.status === 'success') {
+            const pos = pr.result as unknown as { supplyShares: bigint }
+            if (pos.supplyShares > BigInt(0)) curatorSupplyShares += pos.supplyShares
+          }
+        }
+      }
+
+      if (curatorSupplyShares <= BigInt(0) || mkt.totalSupplyShares <= BigInt(0)) continue
+
+      const shareRatio = Number(curatorSupplyShares) / Number(mkt.totalSupplyShares)
+      const curatorBadDebtUsd = (Number(mkt.totalBorrowAssets) / (10 ** mkt.decimals)) * shareRatio
+      if (curatorBadDebtUsd > 100) {
+        totalUnrealizedUsd += curatorBadDebtUsd
       }
     }
   }
 
-  // Subtract already-realized bad debt to avoid double counting
   return Math.max(0, totalUnrealizedUsd - realizedBadDebtUsd)
 }
 
@@ -587,7 +654,7 @@ async function fetchMorphoV2VaultData(
 
   // Detect unrealized bad debt: check historical markets on-chain for stuck borrows
   const unrealizedBadDebtUsd = curatorHistory?.allMarketIds
-    ? await detectUnrealizedBadDebt(curatorHistory.allMarketIds, realizedBadDebtUsd).catch(() => 0)
+    ? await detectUnrealizedBadDebt(curatorHistory.allMarketIds, curatorHistory.allVaultAddresses, realizedBadDebtUsd).catch(() => 0)
     : 0
 
   const historicalBadDebtUsd = realizedBadDebtUsd + unrealizedBadDebtUsd
@@ -708,7 +775,7 @@ export async function fetchMorphoVaultData(
 
   // Detect unrealized bad debt on-chain
   const unrealizedBadDebtUsd = curatorHistory?.allMarketIds
-    ? await detectUnrealizedBadDebt(curatorHistory.allMarketIds, realizedBadDebtUsd).catch(() => 0)
+    ? await detectUnrealizedBadDebt(curatorHistory.allMarketIds, curatorHistory.allVaultAddresses, realizedBadDebtUsd).catch(() => 0)
     : 0
   const historicalBadDebtUsd = realizedBadDebtUsd + unrealizedBadDebtUsd
 
