@@ -4,7 +4,7 @@ import { scoreAssetRisk } from './assetRisk'
 import { scoreLiquidationRisk } from './liquidationRisk'
 import { scoreCuratorRisk } from './curatorRisk'
 
-const WEIGHTS = { asset: 0.50, liquidation: 0.20, curator: 0.30 } as const
+const WEIGHTS = { asset: 0.60, curator: 0.40 } as const
 
 export function computeCompositeScore(
   asset: DimensionScore,
@@ -13,7 +13,6 @@ export function computeCompositeScore(
 ): number {
   return Math.round(
     asset.score * WEIGHTS.asset +
-    liquidation.score * WEIGHTS.liquidation +
     curator.score * WEIGHTS.curator
   )
 }

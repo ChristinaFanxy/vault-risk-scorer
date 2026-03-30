@@ -66,7 +66,44 @@ export function scoreCuratorRisk(vault: VaultData): DimensionScore {
     status: vault.incidentCount === 0 ? 'good' : vault.incidentCount === 1 ? 'caution' : 'bad',
   })
 
-  // 5. Conflicts of interest
+  // 5. Past protocol losses — tiered by severity
+  let badDebtScore = 0
+  let badDebtValue: string
+  let badDebtStatus: 'good' | 'ok' | 'caution' | 'bad'
+  let badDebtNote: string | undefined
+  const bd = vault.historicalBadDebtUsd
+  if (bd === -1) {
+    badDebtValue = 'No data available'
+    badDebtStatus = 'ok'
+  } else if (bd <= 10) {
+    badDebtValue = 'None — clean record'
+    badDebtStatus = 'good'
+  } else if (bd <= 1_000) {
+    badDebtValue = `$${bd.toFixed(0)} — minor (likely liquidation dust)`
+    badDebtScore = 5
+    badDebtStatus = 'ok'
+  } else if (bd <= 50_000) {
+    badDebtValue = `$${(bd / 1_000).toFixed(1)}K unrecovered`
+    badDebtScore = 20
+    badDebtStatus = 'caution'
+    badDebtNote = 'Moderate bad debt — liquidation system struggled in at least one event'
+  } else {
+    badDebtValue = `$${(bd / 1_000).toFixed(1)}K unrecovered`
+    badDebtScore = 50
+    badDebtStatus = 'bad'
+    badDebtNote = 'Significant bad debt — depositors have lost money in past events'
+  }
+  score += badDebtScore
+  indicators.push({
+    name: 'Past protocol losses',
+    desc: 'Historical bad debt across all markets this curator has ever managed (on-chain data, immutable). Shared markets may attribute the same bad debt to multiple curators.',
+    value: badDebtValue,
+    contribution: badDebtScore,
+    status: badDebtStatus,
+    note: badDebtNote,
+  })
+
+  // 6. Conflicts of interest
   const coiScore = vault.curatorBorrowsFromVault ? 15 : 0
   score += coiScore
   indicators.push({

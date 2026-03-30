@@ -102,7 +102,7 @@ async function VaultContent({ chainId, address }: { chainId: string; address: st
 
         <CollapsibleCard
           title="Underlying Asset Risk"
-          subtitle={`Score: ${score.assetRisk.score}/100 · 50% of composite`}
+          subtitle={`Score: ${score.assetRisk.score}/100 · 60% of composite`}
         >
           <RiskDimensionCard
             dimensionScore={score.assetRisk}
@@ -115,7 +115,7 @@ async function VaultContent({ chainId, address }: { chainId: string; address: st
 
         <CollapsibleCard
           title="Liquidation Rules Risk"
-          subtitle={`Score: ${score.liquidationRisk.score}/100 · 20% of composite`}
+          subtitle="Informational only — not scored"
         >
           <RiskDimensionCard
             dimensionScore={score.liquidationRisk}
@@ -128,7 +128,7 @@ async function VaultContent({ chainId, address }: { chainId: string; address: st
 
         <CollapsibleCard
           title="Curator Risk"
-          subtitle={`Score: ${score.curatorRisk.score}/100 · 30% of composite`}
+          subtitle={`Score: ${score.curatorRisk.score}/100 · 40% of composite`}
         >
           <RiskDimensionCard
             dimensionScore={score.curatorRisk}
