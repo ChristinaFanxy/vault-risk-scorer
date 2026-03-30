@@ -84,7 +84,7 @@ export function scoreCuratorRisk(vault: VaultData): DimensionScore {
   })
 
   // 5. Public Allocator
-  const paScore = vault.hasPublicAllocator ? 5 : 0
+  const paScore = vault.hasPublicAllocator ? 10 : 0
   score += paScore
   indicators.push({
     name: 'Public Allocator',
