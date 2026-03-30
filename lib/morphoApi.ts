@@ -110,7 +110,7 @@ const VAULT_CURATOR_QUERY = `
         timelock
         guardian
         owner
-        curators { name verified }
+        curators { name verified addresses { address } }
         allocation {
           supplyAssetsUsd
           market {
@@ -237,7 +237,7 @@ const METAMORPHO_MARKETS_QUERY = `
 `
 
 const V2_VAULTS_BY_CURATOR_QUERY = `
-  query V2VaultsByCurator($curatorAddresses: [String!]!, $chainIds: [Int!]!) {
+  query V2VaultsByCurator($curatorAddresses: [Address!]!, $chainIds: [Int!]!) {
     byCurator: vaultV2s(where: { curatorAddress_in: $curatorAddresses, chainId_in: $chainIds }) {
       items { address }
     }
@@ -572,7 +572,7 @@ export async function fetchMorphoCuratorData(
         timelock: number
         guardian: string
         owner: string
-        curators: Array<{ name: string; verified: boolean }>
+        curators: Array<{ name: string; verified: boolean; addresses: Array<{ address: string }> }>
         allocation: Allocation[]
       }
       warnings: Array<{ type: string; level: string }>
@@ -620,8 +620,8 @@ export async function fetchMorphoCuratorData(
         ? activeMarkets.reduce((s, a) => s + Number(a.market.lltv) / 1e18 * 100, 0) / activeMarkets.length
         : 80)
 
-  // Resolve ALL addresses for this curator via registry (handles multi-address curators)
-  const allCuratorAddresses = await fetchCuratorAllAddresses(curatorAddress)
+  // Use all addresses from the curator entity (same approach as V2 path)
+  const allCuratorAddresses = primaryCurator?.addresses.map(a => a.address) ?? [curatorAddress]
 
   // Steps 2+3 in parallel: count ALL vaults (V1+V2) managed + check curator borrow positions
   type VaultItems = { items: Array<{ address: string }> }
