@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { fetchCuratorAllAddresses } from '@/lib/morphoApi'
 import { fetchCuratorBadDebtHistory, type BadDebtEvent } from '@/lib/thegraph'
+import { detectUnrealizedBadDebt } from '@/lib/scoring/protocols/morpho'
 
 const CHAIN_LABELS: Record<number, string> = { 1: 'Ethereum', 8453: 'Base' }
 
@@ -37,6 +38,11 @@ export default async function CuratorPage({
   const affectedMarketCount = history?.affectedMarketCount ?? 0
   const historicalVaultCount = history?.historicalVaultCount ?? 0
 
+  // Detect unrealized bad debt on-chain
+  const unrealizedBadDebtUsd = history?.allMarketIds
+    ? await detectUnrealizedBadDebt(history.allMarketIds, history.allVaultAddresses, totalBadDebtUsd).catch(() => 0)
+    : 0
+
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 p-6 max-w-4xl mx-auto">
       {/* Header */}
@@ -54,20 +60,20 @@ export default async function CuratorPage({
       </div>
 
       {/* Summary stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-          <p className="text-xs text-gray-500">Total Bad Debt</p>
+          <p className="text-xs text-gray-500">Realized Bad Debt</p>
           <p className={`text-xl font-bold ${totalBadDebtUsd > 0 ? 'text-red-400' : 'text-green-400'}`}>
             {totalBadDebtUsd > 0 ? fmtUsd(totalBadDebtUsd) : 'None'}
           </p>
+          <p className="text-xs text-gray-600 mt-0.5">{eventCount} event(s) across {affectedMarketCount} market(s)</p>
         </div>
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-          <p className="text-xs text-gray-500">Events</p>
-          <p className="text-xl font-bold text-gray-200">{eventCount}</p>
-        </div>
-        <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-          <p className="text-xs text-gray-500">Affected Markets</p>
-          <p className="text-xl font-bold text-gray-200">{affectedMarketCount}</p>
+          <p className="text-xs text-gray-500">Unrealized Bad Debt</p>
+          <p className={`text-xl font-bold ${unrealizedBadDebtUsd > 0 ? 'text-orange-400' : 'text-green-400'}`}>
+            {unrealizedBadDebtUsd > 0 ? fmtUsd(unrealizedBadDebtUsd) : 'None'}
+          </p>
+          <p className="text-xs text-gray-600 mt-0.5">Stuck borrows detected on-chain</p>
         </div>
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
           <p className="text-xs text-gray-500">Historical Vaults</p>
@@ -75,13 +81,26 @@ export default async function CuratorPage({
         </div>
       </div>
 
+      {/* Unrealized bad debt warning */}
+      {unrealizedBadDebtUsd > 0 && (
+        <div className="bg-orange-900/20 border border-orange-800/50 rounded-lg p-4 mb-8">
+          <h2 className="text-sm font-medium text-orange-400 mb-1">Unrealized Bad Debt Detected</h2>
+          <p className="text-xs text-gray-400 leading-relaxed">
+            {fmtUsd(unrealizedBadDebtUsd)} in stuck borrows found across historical markets.
+            These are markets with {'>'}95% utilization where this curator&apos;s vaults still have supply positions
+            but borrowers have not repaid. The protocol has not formally &quot;realized&quot; this as bad debt yet,
+            but the funds are effectively locked.
+          </p>
+        </div>
+      )}
+
       {/* Events table */}
-      {events.length === 0 ? (
+      {events.length === 0 && unrealizedBadDebtUsd === 0 ? (
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-8 text-center">
           <p className="text-green-400 text-lg font-medium">Clean record</p>
           <p className="text-gray-500 text-sm mt-1">No bad debt events found across any chain</p>
         </div>
-      ) : (
+      ) : events.length === 0 ? null : (
         <div className="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-800">
             <h2 className="text-sm font-medium text-gray-300">Bad Debt Events</h2>

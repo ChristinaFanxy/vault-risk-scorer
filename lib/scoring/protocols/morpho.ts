@@ -199,7 +199,7 @@ const BLOCKS_PER_WEEK = BLOCKS_PER_DAY * 7
  * calculate the vault's pro-rata share of the stuck borrows — not the whole market total.
  * This catches cases like the Resolv USR incident ($6M+ stuck but never formally realized).
  */
-async function detectUnrealizedBadDebt(
+export async function detectUnrealizedBadDebt(
   historicalMarketIds: Array<{ marketId: string; chainId: ChainId }>,
   vaultAddresses: string[],
   realizedBadDebtUsd: number,
@@ -685,6 +685,7 @@ async function fetchMorphoV2VaultData(
     liquidationBonusPct: 5,
     liquidationMechanism: 'dutch-auction',
     historicalBadDebtUsd,
+    unrealizedBadDebtUsd,
     oracleManipulationSurface,
     hardcodedOracleCount: 0,            // V2 oracle detection not yet implemented
     hardcodedOracleSymbols: [],
@@ -805,6 +806,7 @@ export async function fetchMorphoVaultData(
     liquidationBonusPct: 5,
     liquidationMechanism: 'dutch-auction',
     historicalBadDebtUsd,
+    unrealizedBadDebtUsd,
     oracleManipulationSurface,
     hardcodedOracleCount: hardcodedOracleSymbols.length,
     hardcodedOracleSymbols,

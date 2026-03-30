@@ -40,6 +40,7 @@ export interface VaultData {
   liquidationBonusPct: number
   liquidationMechanism: LiquidationMechanism
   historicalBadDebtUsd: number  // -1 = unavailable, 0 = none, >0 = bad debt occurred
+  unrealizedBadDebtUsd: number  // on-chain detected stuck borrows not yet formally realized
 
   // Vault liquidity / withdrawability
   weightedUtilization: number        // 0-1, weighted avg market utilization

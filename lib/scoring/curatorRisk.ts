@@ -55,54 +55,35 @@ export function scoreCuratorRisk(vault: VaultData): DimensionScore {
     note: vault.timelockHours === 0 ? 'No delay — parameter changes take effect immediately, no time to exit' : undefined,
   })
 
-  // 4. Track record
+  // 4. Track record & past losses (merged)
   const trackScore = vault.incidentCount === 0 ? 0 : vault.incidentCount === 1 ? 15 : 30
-  score += trackScore
+  const bd = vault.historicalBadDebtUsd
+  const badDebtScore = bd === -1 ? 0 : bd <= 10 ? 0 : bd <= 1_000 ? 5 : bd <= 50_000 ? 20 : 50
+  score += trackScore + badDebtScore
+
+  const fmtBd = bd === -1 ? 'no data'
+    : bd <= 10 ? '$0 bad debt'
+    : bd <= 1_000 ? `$${bd.toFixed(0)} bad debt`
+    : `$${(bd / 1_000).toFixed(1)}K bad debt`
+  const trackValue = `${vault.vaultsManaged} vault(s) · ${vault.incidentCount} incident(s) · ${fmtBd}`
+
+  const trackStatus: 'good' | 'ok' | 'caution' | 'bad' =
+    bd > 50_000 || vault.incidentCount >= 2 ? 'bad'
+    : bd > 1_000 || vault.incidentCount === 1 ? 'caution'
+    : bd > 10 ? 'ok' : 'good'
+
+  const trackNote = bd > 50_000 ? 'Significant bad debt — depositors have lost money in past events'
+    : bd > 1_000 ? 'Moderate bad debt — liquidation system struggled in at least one event'
+    : undefined
+
   indicators.push({
     name: 'Track record',
-    desc: 'Past management history across all vaults this team runs.',
-    value: `${vault.vaultsManaged} vault(s) managed · ${vault.incidentCount} incident(s)`,
-    contribution: trackScore,
-    status: vault.incidentCount === 0 ? 'good' : vault.incidentCount === 1 ? 'caution' : 'bad',
-    link: vault.incidentCount > 0 ? `/curator/${vault.curatorAddress}` : undefined,
-  })
-
-  // 5. Past protocol losses — tiered by severity
-  let badDebtScore = 0
-  let badDebtValue: string
-  let badDebtStatus: 'good' | 'ok' | 'caution' | 'bad'
-  let badDebtNote: string | undefined
-  const bd = vault.historicalBadDebtUsd
-  if (bd === -1) {
-    badDebtValue = 'No data available'
-    badDebtStatus = 'ok'
-  } else if (bd <= 10) {
-    badDebtValue = 'None — clean record'
-    badDebtStatus = 'good'
-  } else if (bd <= 1_000) {
-    badDebtValue = `$${bd.toFixed(0)} — minor (likely liquidation dust)`
-    badDebtScore = 5
-    badDebtStatus = 'ok'
-  } else if (bd <= 50_000) {
-    badDebtValue = `$${(bd / 1_000).toFixed(1)}K unrecovered`
-    badDebtScore = 20
-    badDebtStatus = 'caution'
-    badDebtNote = 'Moderate bad debt — liquidation system struggled in at least one event'
-  } else {
-    badDebtValue = `$${(bd / 1_000).toFixed(1)}K unrecovered`
-    badDebtScore = 50
-    badDebtStatus = 'bad'
-    badDebtNote = 'Significant bad debt — depositors have lost money in past events'
-  }
-  score += badDebtScore
-  indicators.push({
-    name: 'Past protocol losses',
-    desc: 'Historical bad debt across all markets this curator has ever managed (on-chain data, immutable). Shared markets may attribute the same bad debt to multiple curators.',
-    value: badDebtValue,
-    contribution: badDebtScore,
-    status: badDebtStatus,
-    note: badDebtNote,
-    link: bd > 10 ? `/curator/${vault.curatorAddress}` : undefined,
+    desc: 'Past management history and bad debt across all markets this curator has ever managed. On-chain data (immutable). Shared markets may attribute the same bad debt to multiple curators.',
+    value: trackValue,
+    contribution: trackScore + badDebtScore,
+    status: trackStatus,
+    note: trackNote,
+    link: (vault.incidentCount > 0 || bd > 10) ? `/curator/${vault.curatorAddress}` : undefined,
   })
 
   // 6. Conflicts of interest

@@ -42,7 +42,7 @@ describe('scoreVault', () => {
     assets: [{ address: '0xa', symbol: 'USDC', assetClass: 'stablecoin', oracleType: 'chainlink', liquidityDepthUsd: 50_000_000, volatility30d: 0.001, vaultWeightPct: 100 }],
     weightedUtilization: 0, totalMarketLiquidityUsd: 100_000_000,
     maxLtvPct: 80, liquidationThresholdPct: 90, liquidationBonusPct: 8,
-    liquidationMechanism: 'dutch-auction', historicalBadDebtUsd: 0,
+    liquidationMechanism: 'dutch-auction', historicalBadDebtUsd: 0, unrealizedBadDebtUsd: 0,
     oracleManipulationSurface: 'low',
     hardcodedOracleCount: 0, hardcodedOracleSymbols: [],
     curatorName: null, curatorAddress: '0xc', curatorType: 'institution', permissionScope: 'narrow',

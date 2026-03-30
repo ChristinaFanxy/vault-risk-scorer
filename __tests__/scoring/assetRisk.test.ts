@@ -13,7 +13,7 @@ const baseVault: VaultData = {
   }],
   weightedUtilization: 0, totalMarketLiquidityUsd: 100_000_000,
   maxLtvPct: 80, liquidationThresholdPct: 85, liquidationBonusPct: 5,
-  liquidationMechanism: 'dutch-auction', historicalBadDebtUsd: 0,
+  liquidationMechanism: 'dutch-auction', historicalBadDebtUsd: 0, unrealizedBadDebtUsd: 0,
   oracleManipulationSurface: 'low',
   hardcodedOracleCount: 0, hardcodedOracleSymbols: [],
   curatorName: null, curatorAddress: '0xcurator', curatorType: 'institution', permissionScope: 'narrow',
