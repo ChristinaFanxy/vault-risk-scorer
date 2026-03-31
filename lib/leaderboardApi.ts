@@ -20,7 +20,7 @@ async function gql<T>(query: string, variables: Record<string, unknown>, revalid
 
 const V1_VAULTS_QUERY = `
   query V1Vaults($chainIds: [Int!]!, $skip: Int!) {
-    vaults(where: { chainId_in: $chainIds }, first: 100, skip: $skip) {
+    vaults(where: { chainId_in: $chainIds }, first: 40, skip: $skip) {
       items {
         address
         chain { id }
@@ -50,6 +50,7 @@ const V1_VAULTS_QUERY = `
   }
 `
 
+// V2 query: lightweight (no caps/allocation) to avoid Morpho API complexity limits
 const V2_VAULTS_QUERY = `
   query V2Vaults($chainIds: [Int!]!, $skip: Int!) {
     vaultV2s(where: { chainId_in: $chainIds }, first: 100, skip: $skip) {
@@ -63,19 +64,6 @@ const V2_VAULTS_QUERY = `
         curators { items { name verified addresses { address } } }
         warnings { type level }
         timelocks { selector duration }
-        caps { items {
-          type
-          data {
-            ... on MarketV1CapData {
-              market {
-                realizedBadDebt { usd }
-                warnings { type }
-                collateralAsset { symbol }
-                state { utilization }
-              }
-            }
-          }
-        }}
       }
       pageInfo { countTotal }
     }
@@ -142,8 +130,8 @@ async function fetchAllV1Vaults(): Promise<VaultEntry[]> {
           : 0,
       })
     }
-    if (vaults.items.length < 100) break
-    skip += 100
+    if (vaults.items.length < 40) break
+    skip += 40
   }
   return entries
 }
@@ -159,8 +147,6 @@ async function fetchAllV2Vaults(): Promise<VaultEntry[]> {
       const primaryCurator = v.curators?.items?.[0]
       const curatorAddr = primaryCurator?.addresses?.[0]?.address ?? v.owner?.address ?? ZERO_ADDRESS
       const addAdapterTl = v.timelocks?.find((t: any) => t.selector === ADD_ADAPTER_SELECTOR)
-      const marketCaps = (v.caps?.items ?? []).filter((c: any) => c.type === 'MarketV1' && c.data?.market)
-      const totalSupply = marketCaps.reduce((sum: number, c: any) => sum + (c.data.market?.state?.utilization ?? 0), 0)
 
       entries.push({
         curatorAddress: curatorAddr.toLowerCase(),
@@ -174,13 +160,11 @@ async function fetchAllV2Vaults(): Promise<VaultEntry[]> {
         hasGuardian: false,
         hasCuratorBorrowing: false,
         hasPublicAllocator: false,
-        badDebtUsd: marketCaps.reduce((sum: number, c: any) => sum + (c.data.market?.realizedBadDebt?.usd ?? 0), 0),
-        hasOracleWarning: marketCaps.some((c: any) => c.data.market?.warnings?.some((w: any) => w.type === 'incorrect_oracle_configuration')),
-        marketCount: marketCaps.length,
-        collateralSymbols: marketCaps.map((c: any) => c.data.market?.collateralAsset?.symbol).filter(Boolean),
-        weightedUtilization: marketCaps.length > 0
-          ? marketCaps.reduce((sum: number, c: any) => sum + (c.data.market?.state?.utilization ?? 0), 0) / marketCaps.length
-          : 0,
+        badDebtUsd: 0,  // V2 caps query too heavy for bulk fetch
+        hasOracleWarning: v.warnings?.some((w: any) => w.type === 'incorrect_oracle_configuration') ?? false,
+        marketCount: 0,
+        collateralSymbols: [],
+        weightedUtilization: 0,
       })
     }
     if (vaultV2s.items.length < 100) break
