@@ -7,8 +7,9 @@ export interface CuratorAggregated {
   chainCount: number
   weightedApyPct: number
   avgFeePct: number | null
-  totalBadDebtUsd: number
-  badDebtToTvlRatio: number
+  totalBadDebtUsd: number       // realized (from The Graph)
+  unrealizedBadDebtUsd: number  // on-chain detected stuck borrows
+  badDebtToTvlRatio: number     // (realized + unrealized) / TVL
   affectedMarketCount: number
   hasOracleWarning: boolean
   avgTimelockHours: number
@@ -49,7 +50,8 @@ export function scoreYield(c: CuratorAggregated): number {
 }
 
 export function scoreSafety(c: CuratorAggregated): number {
-  const bd = c.totalBadDebtUsd <= 0 ? 100 : c.totalBadDebtUsd < 1_000 ? 80 : c.totalBadDebtUsd < 50_000 ? 50 : 20
+  const totalBd = c.totalBadDebtUsd + c.unrealizedBadDebtUsd
+  const bd = totalBd <= 0 ? 100 : totalBd < 1_000 ? 80 : totalBd < 50_000 ? 50 : 20
   const ratio = c.badDebtToTvlRatio <= 0 ? 100 : c.badDebtToTvlRatio < 0.0001 ? 80 : c.badDebtToTvlRatio < 0.001 ? 50 : 20
   const markets = c.affectedMarketCount <= 0 ? 100 : c.affectedMarketCount <= 2 ? 70 : c.affectedMarketCount <= 5 ? 40 : 20
   const oracle = c.hasOracleWarning ? 30 : 100

@@ -13,6 +13,7 @@ const baseCurator: CuratorAggregated = {
   weightedApyPct: 5,
   avgFeePct: 10,
   totalBadDebtUsd: 0,
+  unrealizedBadDebtUsd: 0,
   badDebtToTvlRatio: 0,
   affectedMarketCount: 0,
   hasOracleWarning: false,

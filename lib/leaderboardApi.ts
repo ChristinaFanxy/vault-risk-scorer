@@ -2,6 +2,7 @@
 import type { CuratorAggregated } from '@/lib/scoring/curatorLeaderboard'
 import { classifyBySymbol } from '@/lib/tokenRegistry'
 import { fetchCuratorBadDebtHistory } from '@/lib/thegraph'
+import { detectUnrealizedBadDebt } from '@/lib/scoring/protocols/morpho'
 
 const MORPHO_API = 'https://blue-api.morpho.org/graphql'
 const ALL_CHAIN_IDS = [1, 8453, 42161, 10, 137, 130, 999, 747474, 143, 988]
@@ -243,6 +244,7 @@ export async function fetchAllCuratorData(): Promise<CuratorAggregated[]> {
       weightedApyPct: weightedApy,
       avgFeePct: avgFee,
       totalBadDebtUsd: totalBadDebt,
+      unrealizedBadDebtUsd: 0,  // enriched later via on-chain detection
       badDebtToTvlRatio: totalTvl > 0 ? totalBadDebt / totalTvl : 0,
       affectedMarketCount: affectedMarkets,
       hasOracleWarning: vaults.some(v => v.hasOracleWarning),
@@ -263,28 +265,42 @@ export async function fetchAllCuratorData(): Promise<CuratorAggregated[]> {
     curatorAddrsMap.set(name, [...new Set(vaults.flatMap(v => v.allCuratorAddresses))])
   }
 
-  // Enrich with The Graph bad debt history using ALL curator addresses.
+  // Enrich with The Graph bad debt history + on-chain unrealized bad debt detection.
   // Each curator may have 1-30+ addresses across chains.
   await Promise.all(curators.map(async (c) => {
     try {
       const allAddrs = curatorAddrsMap.get(c.curatorName!) ?? [c.curatorAddress]
-      // Query The Graph for each address and sum results
+
+      // Step 1: The Graph realized bad debt (per address, summed)
       const histories = await Promise.all(
         allAddrs.map(addr => fetchCuratorBadDebtHistory([addr]).catch(() => null))
       )
       let totalBd = 0
       let totalAffected = 0
+      const allMarketIds: Array<{ marketId: string; chainId: any }> = []
+      const allVaultAddresses: string[] = []
       for (const h of histories) {
         if (h) {
           totalBd += h.totalBadDebtUsd
           totalAffected += h.affectedMarketCount
+          allMarketIds.push(...h.allMarketIds)
+          allVaultAddresses.push(...h.allVaultAddresses)
         }
       }
       if (totalBd > c.totalBadDebtUsd) {
         c.totalBadDebtUsd = totalBd
         c.affectedMarketCount = Math.max(c.affectedMarketCount, totalAffected)
-        c.badDebtToTvlRatio = c.totalTvlUsd > 0 ? c.totalBadDebtUsd / c.totalTvlUsd : 0
       }
+
+      // Step 2: On-chain unrealized bad debt detection (stuck borrows)
+      if (allMarketIds.length > 0 && allVaultAddresses.length > 0) {
+        const unrealized = await detectUnrealizedBadDebt(allMarketIds, allVaultAddresses, c.totalBadDebtUsd).catch(() => ({ totalUsd: 0 }))
+        c.unrealizedBadDebtUsd = unrealized.totalUsd
+      }
+
+      // Update ratio with total (realized + unrealized)
+      const totalDebt = c.totalBadDebtUsd + c.unrealizedBadDebtUsd
+      c.badDebtToTvlRatio = c.totalTvlUsd > 0 ? totalDebt / c.totalTvlUsd : 0
     } catch { /* keep Morpho API data as fallback */ }
   }))
 
