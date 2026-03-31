@@ -2,6 +2,7 @@ import { LeaderboardView } from './LeaderboardView'
 import { fetchAllCuratorData } from '@/lib/leaderboardApi'
 import { rankCurators } from '@/lib/scoring/curatorLeaderboard'
 
+export const dynamic = 'force-dynamic'
 export const revalidate = 43200
 
 export default async function LeaderboardPage() {
