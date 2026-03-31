@@ -173,15 +173,27 @@ async function fetchAllV2Vaults(): Promise<VaultEntry[]> {
   return entries
 }
 
+// Fetch the official Morpho curator registry as whitelist
+const CURATOR_REGISTRY_QUERY = `
+  query { curators { items { name verified } } }
+`
+
+async function fetchCuratorWhitelist(): Promise<Set<string>> {
+  const { curators } = await gql<{ curators: { items: Array<{ name: string; verified: boolean }> } }>(
+    CURATOR_REGISTRY_QUERY, {}
+  )
+  return new Set(curators.items.filter(c => c.verified).map(c => c.name))
+}
+
 export async function fetchAllCuratorData(): Promise<CuratorAggregated[]> {
-  const [v1, v2] = await Promise.all([fetchAllV1Vaults(), fetchAllV2Vaults()])
+  const [v1, v2, whitelist] = await Promise.all([fetchAllV1Vaults(), fetchAllV2Vaults(), fetchCuratorWhitelist()])
   const allVaults = [...v1, ...v2]
 
   // Group by curator NAME — same curator uses different addresses across chains.
-  // Skip unnamed vaults (individual vault owners, not registered curators).
+  // Only include curators that are in the official Morpho registry.
   const byCurator = new Map<string, VaultEntry[]>()
   for (const v of allVaults) {
-    if (!v.curatorName) continue
+    if (!v.curatorName || !whitelist.has(v.curatorName)) continue
     const key = v.curatorName
     const arr = byCurator.get(key) ?? []
     arr.push(v)
