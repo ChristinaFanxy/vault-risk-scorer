@@ -4,10 +4,13 @@
 // is immutable — deleted vaults / removed markets can't erase bad debt history.
 import type { ChainId } from '@/lib/scoring/types'
 
-const MORPHO_SUBGRAPH: Record<ChainId, string | undefined> = {
+const MORPHO_SUBGRAPH: Record<number, string | undefined> = {
   1: process.env.MORPHO_SUBGRAPH_MAINNET,
   8453: process.env.MORPHO_SUBGRAPH_BASE,
   42161: process.env.MORPHO_SUBGRAPH_ARBITRUM,
+  10: process.env.MORPHO_SUBGRAPH_OPTIMISM,
+  137: process.env.MORPHO_SUBGRAPH_POLYGON,
+  130: process.env.MORPHO_SUBGRAPH_UNICHAIN,
 }
 
 // Step 1: Find all market IDs ever associated with a curator's MetaMorpho vaults.
@@ -89,7 +92,7 @@ async function subgraphQuery<T>(
   return json.data as T
 }
 
-const ALL_CHAINS: ChainId[] = [1, 8453, 42161]
+const ALL_CHAINS: ChainId[] = [1, 8453, 42161, 10, 137, 130]
 
 /**
  * Queries a single chain's subgraph for curator vault/market/bad-debt data.

@@ -1,6 +1,6 @@
 // lib/scoring/types.ts
 
-export type ChainId = 1 | 8453 | 42161  // 1 = Ethereum mainnet, 8453 = Base, 42161 = Arbitrum One
+export type ChainId = 1 | 8453 | 42161 | 10 | 137 | 130  // Ethereum, Base, Arbitrum, Optimism, Polygon, Unichain
 
 export type AssetClass = 'stablecoin' | 'blue-chip' | 'long-tail'
 export type OracleType = 'chainlink' | 'uniswap-twap' | 'custom'

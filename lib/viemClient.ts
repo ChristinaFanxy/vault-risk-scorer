@@ -34,7 +34,7 @@ function rpcUrl(chain: 'mainnet' | 'base' | 'arbitrum', keyOverride?: string): s
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const CHAIN_CONFIG: Record<ChainId, { chain: any; name: 'mainnet' | 'base' | 'arbitrum' }> = {
+const CHAIN_CONFIG: Partial<Record<ChainId, { chain: any; name: 'mainnet' | 'base' | 'arbitrum' }>> = {
   1: { chain: mainnet, name: 'mainnet' },
   8453: { chain: base, name: 'base' },
   42161: { chain: arbitrum, name: 'arbitrum' },
