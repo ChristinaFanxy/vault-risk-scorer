@@ -55,6 +55,21 @@ export const t = {
   dataSource: 'Data source: The Graph Morpho Blue subgraph (immutable on-chain data)',
   sharedMarkets: 'Shared markets may attribute the same bad debt to multiple curators.',
 
+  // Leaderboard
+  leaderboard: 'Curator Leaderboard',
+  leaderboardSubtitle: 'All Morpho curators ranked by composite score across 10 chains.',
+  viewLeaderboard: 'View Curator Leaderboard →',
+  refresh: 'Refresh',
+  refreshing: 'Refreshing...',
+  score: 'Score',
+  scale: 'Scale',
+  safety: 'Safety',
+  governance: 'Gov',
+  assetQuality: 'Asset',
+  curator: 'Curator',
+  avgApy: 'Avg APY',
+  tvl: 'TVL',
+
   // Footer
   disclaimer: 'For informational purposes only. Not investment advice.',
 
