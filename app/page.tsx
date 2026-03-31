@@ -1,4 +1,5 @@
 'use client'
+import Link from 'next/link'
 import { SearchBar } from '@/components/SearchBar'
 import { FeaturedVaultsList } from '@/components/FeaturedVaultsList'
 import featuredVaults from '@/data/featured-vaults.json'
@@ -18,6 +19,12 @@ export default function HomePage() {
       </p>
 
       <SearchBar />
+
+      <div className="mt-6">
+        <Link href="/leaderboard" className="text-brand-cream hover:text-brand text-base font-medium">
+          {t.viewLeaderboard}
+        </Link>
+      </div>
 
       <div className="mt-12 w-full max-w-2xl">
         <h2 className="text-brand-light text-sm font-semibold uppercase tracking-wider mb-4">
