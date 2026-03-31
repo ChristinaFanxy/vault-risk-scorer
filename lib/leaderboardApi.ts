@@ -2,7 +2,6 @@
 import type { CuratorAggregated } from '@/lib/scoring/curatorLeaderboard'
 import { classifyBySymbol } from '@/lib/tokenRegistry'
 import { fetchCuratorBadDebtHistory } from '@/lib/thegraph'
-import { fetchCuratorAllAddresses } from '@/lib/morphoApi'
 
 const MORPHO_API = 'https://blue-api.morpho.org/graphql'
 const ALL_CHAIN_IDS = [1, 8453, 42161, 10, 137, 130, 999, 747474, 143, 988]
@@ -34,7 +33,7 @@ const V1_VAULTS_QUERY = `
           fee
           timelock
           guardian
-          curators { name verified }
+          curators { name verified addresses { address } }
           allocation {
             supplyAssetsUsd
             market {
@@ -77,6 +76,7 @@ const ADD_ADAPTER_SELECTOR = '0x60d54d41'
 
 interface VaultEntry {
   curatorAddress: string
+  allCuratorAddresses: string[]  // all addresses this curator uses across chains
   curatorName: string | null
   verified: boolean
   chainId: number
@@ -105,11 +105,15 @@ async function fetchAllV1Vaults(): Promise<VaultEntry[]> {
       const s = v.state
       const curatorAddr = (s.curator && s.curator !== ZERO_ADDRESS) ? s.curator : s.owner
       const primaryCurator = s.curators?.[0]
+      const allAddrs = primaryCurator?.addresses
+        ? [...new Set((primaryCurator.addresses as Array<{address: string}>).map((a: {address: string}) => a.address.toLowerCase()))]
+        : [curatorAddr.toLowerCase()]
       const allocations = s.allocation ?? []
       const totalSupply = allocations.reduce((sum: number, a: any) => sum + (a.supplyAssetsUsd ?? 0), 0)
 
       entries.push({
         curatorAddress: curatorAddr.toLowerCase(),
+        allCuratorAddresses: allAddrs,
         curatorName: primaryCurator?.name ?? null,
         verified: primaryCurator?.verified ?? false,
         chainId: v.chain.id,
@@ -148,10 +152,14 @@ async function fetchAllV2Vaults(): Promise<VaultEntry[]> {
     for (const v of vaultV2s.items) {
       const primaryCurator = v.curators?.items?.[0]
       const curatorAddr = primaryCurator?.addresses?.[0]?.address ?? v.owner?.address ?? ZERO_ADDRESS
+      const allAddrs = primaryCurator?.addresses
+        ? [...new Set((primaryCurator.addresses as Array<{address: string}>).map((a: {address: string}) => a.address.toLowerCase()))]
+        : [curatorAddr.toLowerCase()]
       const addAdapterTl = v.timelocks?.find((t: any) => t.selector === ADD_ADAPTER_SELECTOR)
 
       entries.push({
         curatorAddress: curatorAddr.toLowerCase(),
+        allCuratorAddresses: allAddrs,
         curatorName: primaryCurator?.name ?? null,
         verified: primaryCurator?.verified ?? false,
         chainId: v.chain.id,
@@ -249,15 +257,32 @@ export async function fetchAllCuratorData(): Promise<CuratorAggregated[]> {
     })
   }
 
-  // Enrich with The Graph bad debt history (immutable, more accurate than API per-market data).
-  // Run in parallel for all curators — ~32 curators × 3 chains = ~96 subgraph queries.
+  // Build map of curator name → all unique addresses (from vault data)
+  const curatorAddrsMap = new Map<string, string[]>()
+  for (const [name, vaults] of byCurator) {
+    curatorAddrsMap.set(name, [...new Set(vaults.flatMap(v => v.allCuratorAddresses))])
+  }
+
+  // Enrich with The Graph bad debt history using ALL curator addresses.
+  // Each curator may have 1-30+ addresses across chains.
   await Promise.all(curators.map(async (c) => {
     try {
-      const allAddrs = await fetchCuratorAllAddresses(c.curatorAddress).catch(() => [c.curatorAddress])
-      const history = await fetchCuratorBadDebtHistory(allAddrs).catch(() => null)
-      if (history && history.totalBadDebtUsd > 0) {
-        c.totalBadDebtUsd = Math.max(c.totalBadDebtUsd, history.totalBadDebtUsd)
-        c.affectedMarketCount = Math.max(c.affectedMarketCount, history.affectedMarketCount)
+      const allAddrs = curatorAddrsMap.get(c.curatorName!) ?? [c.curatorAddress]
+      // Query The Graph for each address and sum results
+      const histories = await Promise.all(
+        allAddrs.map(addr => fetchCuratorBadDebtHistory([addr]).catch(() => null))
+      )
+      let totalBd = 0
+      let totalAffected = 0
+      for (const h of histories) {
+        if (h) {
+          totalBd += h.totalBadDebtUsd
+          totalAffected += h.affectedMarketCount
+        }
+      }
+      if (totalBd > c.totalBadDebtUsd) {
+        c.totalBadDebtUsd = totalBd
+        c.affectedMarketCount = Math.max(c.affectedMarketCount, totalAffected)
         c.badDebtToTvlRatio = c.totalTvlUsd > 0 ? c.totalBadDebtUsd / c.totalTvlUsd : 0
       }
     } catch { /* keep Morpho API data as fallback */ }
