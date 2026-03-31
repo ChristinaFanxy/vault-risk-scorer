@@ -177,16 +177,20 @@ export async function fetchAllCuratorData(): Promise<CuratorAggregated[]> {
   const [v1, v2] = await Promise.all([fetchAllV1Vaults(), fetchAllV2Vaults()])
   const allVaults = [...v1, ...v2]
 
+  // Group by curator NAME — same curator uses different addresses across chains.
+  // Skip unnamed vaults (individual vault owners, not registered curators).
   const byCurator = new Map<string, VaultEntry[]>()
   for (const v of allVaults) {
-    if (!v.curatorAddress || v.curatorAddress === ZERO_ADDRESS) continue
-    const arr = byCurator.get(v.curatorAddress) ?? []
+    if (!v.curatorName) continue
+    const key = v.curatorName
+    const arr = byCurator.get(key) ?? []
     arr.push(v)
-    byCurator.set(v.curatorAddress, arr)
+    byCurator.set(key, arr)
   }
 
   const curators: CuratorAggregated[] = []
-  for (const [addr, vaults] of byCurator) {
+  for (const [name, vaults] of byCurator) {
+    const addr = vaults[0].curatorAddress
     const totalTvl = vaults.reduce((s, v) => s + v.tvlUsd, 0)
     const weightedApy = totalTvl > 0
       ? vaults.reduce((s, v) => s + v.apyPct * (v.tvlUsd / totalTvl), 0)
@@ -203,14 +207,13 @@ export async function fetchAllCuratorData(): Promise<CuratorAggregated[]> {
     const totalUtil = totalTvl > 0
       ? vaults.reduce((s, v) => s + v.weightedUtilization * (v.tvlUsd / totalTvl), 0)
       : 0
-    const named = vaults.find(v => v.curatorName)
     const verified = vaults.some(v => v.verified)
     const affectedMarkets = vaults.filter(v => v.badDebtUsd > 1).length
     const maxTimelock = Math.max(...vaults.map(v => v.timelockHours), 0)
 
     curators.push({
       curatorAddress: addr,
-      curatorName: named?.curatorName ?? null,
+      curatorName: name,
       verified,
       totalTvlUsd: totalTvl,
       vaultCount: vaults.length,
