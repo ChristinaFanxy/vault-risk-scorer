@@ -331,7 +331,7 @@ export async function fetchMorphoV2Data(
     metaMorphoAddresses.map(addr =>
       gql<{ vault: { state: { allocation: MmAllocation[] } } }>(
         METAMORPHO_MARKETS_QUERY, { address: addr, chainId }
-      ).then(r => r.vault.state.allocation.filter(a => (a.supplyAssetsUsd ?? 0) > 0))
+      ).then(r => r.vault.state.allocation.filter(a => (a.supplyAssetsUsd ?? 0) > 0 && a.market.collateralAsset !== null))
         .catch(() => [] as MmAllocation[])
     )
   )).flat()
