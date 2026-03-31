@@ -57,10 +57,13 @@ function DetailPanel({ r }: { r: CuratorRanking }) {
       <div className="bg-brand-card border border-brand-border rounded-lg p-3">
         <h4 className="font-semibold text-brand-cream mb-2">Safety <span className={`ml-1 ${scoreColor(r.safetyScore)}`}>{r.safetyScore}</span></h4>
         <div className="space-y-1 text-brand-light">
-          <p>Bad debt: <span className="text-brand-cream font-medium">{r.totalBadDebtUsd > 0 ? fmtUsd(r.totalBadDebtUsd) : '$0'}</span></p>
+          <p>Realized bad debt: <span className="text-brand-cream font-medium">{r.totalBadDebtUsd > 0 ? fmtUsd(r.totalBadDebtUsd) : '$0'}</span></p>
           <p>Bad debt / TVL: <span className="text-brand-cream font-medium">{(r.badDebtToTvlRatio * 100).toFixed(4)}%</span></p>
           <p>Affected markets: <span className="text-brand-cream font-medium">{r.affectedMarketCount}</span></p>
           <p>Oracle: {badge(!r.hasOracleWarning, r.hasOracleWarning ? 'Warning' : 'Clean')}</p>
+          <Link href={`/curator/${r.curatorAddress}`} className="text-brand-cream hover:text-brand text-xs font-medium mt-2 inline-block">
+            View full history (incl. unrealized) →
+          </Link>
         </div>
       </div>
 

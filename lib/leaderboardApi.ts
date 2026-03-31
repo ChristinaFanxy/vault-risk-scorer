@@ -1,6 +1,8 @@
 // lib/leaderboardApi.ts
 import type { CuratorAggregated } from '@/lib/scoring/curatorLeaderboard'
 import { classifyBySymbol } from '@/lib/tokenRegistry'
+import { fetchCuratorBadDebtHistory } from '@/lib/thegraph'
+import { fetchCuratorAllAddresses } from '@/lib/morphoApi'
 
 const MORPHO_API = 'https://blue-api.morpho.org/graphql'
 const ALL_CHAIN_IDS = [1, 8453, 42161, 10, 137, 130, 999, 747474, 143, 988]
@@ -246,6 +248,20 @@ export async function fetchAllCuratorData(): Promise<CuratorAggregated[]> {
       weightedUtilization: totalUtil,
     })
   }
+
+  // Enrich with The Graph bad debt history (immutable, more accurate than API per-market data).
+  // Run in parallel for all curators — ~32 curators × 3 chains = ~96 subgraph queries.
+  await Promise.all(curators.map(async (c) => {
+    try {
+      const allAddrs = await fetchCuratorAllAddresses(c.curatorAddress).catch(() => [c.curatorAddress])
+      const history = await fetchCuratorBadDebtHistory(allAddrs).catch(() => null)
+      if (history && history.totalBadDebtUsd > 0) {
+        c.totalBadDebtUsd = Math.max(c.totalBadDebtUsd, history.totalBadDebtUsd)
+        c.affectedMarketCount = Math.max(c.affectedMarketCount, history.affectedMarketCount)
+        c.badDebtToTvlRatio = c.totalTvlUsd > 0 ? c.totalBadDebtUsd / c.totalTvlUsd : 0
+      }
+    } catch { /* keep Morpho API data as fallback */ }
+  }))
 
   return curators
 }
